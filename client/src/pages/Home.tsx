@@ -230,6 +230,22 @@ export default function Home() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     let refreshing = false;
+    // Was this page load ALREADY controlled by an older service worker when
+    // this effect ran? That's the only case where a later "controllerchange"
+    // means a real version update (old SW -> new SW) that's worth reloading
+    // for. On a brand-new install — including the very first launch of the
+    // iOS "Add to Home Screen" app — there is no prior controller, so the
+    // very first activate()/clients.claim() below ALSO fires
+    // "controllerchange" even though nothing actually changed for the user.
+    // Reloading in that case used to force an unprompted, JS-triggered
+    // navigation on first launch, and iOS Safari's standalone (home-screen)
+    // web app mode — unlike an ordinary Safari tab — silently stops letting
+    // any <input>/<textarea> open the software keyboard after a reload like
+    // that, so every text field looked permanently dead until the app was
+    // deleted and re-added. Skipping the reload when there was no prior
+    // controller avoids that trap while still updating to the latest code
+    // on subsequent real deploys.
+    const hadController = !!navigator.serviceWorker.controller;
     // Register with an absolute, BASE_PATH-anchored URL and an explicit
     // scope — not a bare relative "sw.js". A relative path resolves against
     // the CURRENT window.location, and after an in-app "Go Home" navigation
@@ -237,7 +253,7 @@ export default function Home() {
     // root by wouter, which would try to load "/sw.js" (404) instead of
     // "/career-compass-app/sw.js" and silently fail to register at all.
     const registrationPromise = navigator.serviceWorker.register(`${BASE_PATH}/sw.js`, { scope: `${BASE_PATH}/` });
-    const onControllerChange = () => { if (!refreshing) { refreshing = true; window.location.reload(); } };
+    const onControllerChange = () => { if (hadController && !refreshing) { refreshing = true; window.location.reload(); } };
     navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
     registrationPromise.then((registration) => {
       setServiceWorkerRegistration(registration);

@@ -1,12 +1,13 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { strToU8 } from "fflate";
 import {
   ArrowDown, ArrowUp, BookOpen, BriefcaseBusiness, CalendarDays, Check,
-  ChevronRight, FileDown, FileUp, Home as HomeIcon, Lightbulb, Menu, Plus,
+  ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, Pencil, Plus,
   RefreshCw, Search, Settings, Sparkles, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createBackupZip, parseBackupBytes } from "@/lib/backup";
+import { BASE_PATH } from "@/lib/basePath";
 
 type Screen = "home" | "research" | "interview" | "schedule" | "settings";
 type ResearchMode = "research" | "summary";
@@ -51,36 +52,161 @@ function ResearchScreen({ companies, setCompanies, onNavigate }: { companies: Co
 function move(companies: Company[], setCompanies: Dispatch<SetStateAction<Company[]>>, id: string, delta: number) { const index = companies.findIndex((c) => c.id === id); const target = index + delta; if (index < 0 || target < 0 || target >= companies.length) return; const next = [...companies]; [next[index], next[target]] = [next[target], next[index]]; setCompanies(next); }
 function CompanyEditor({ company, onClose, onSave, onDelete }: { company: Company; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) { const [draft, setDraft] = useState(company); const update = (key: keyof Company, value: string | number | null | string[]) => setDraft((d) => ({ ...d, [key]: value })); return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">COMPANY NOTE</p><h2>{draft.name}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div><div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<textarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<textarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<textarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<textarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label></div><div className="modal-footer"><button className="danger-button" onClick={onDelete}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>; }
 
+// A single "add / edit interview card" category field: pick from the
+// existing categories, or switch to a text input to create a brand new one.
+// `resetKey` forces the internal select/new-input mode to re-sync with
+// `value` whenever the surrounding form is reset or points at a new card
+// (React only reads useState's initial value once per mount, so without
+// this the picker could get stuck showing the wrong mode after a save).
+function CategoryPicker({ value, categories, onChange, resetKey }: { value: string; categories: string[]; onChange: (value: string) => void; resetKey: string | number }) {
+  const [mode, setMode] = useState<"select" | "new">(value && !categories.includes(value) ? "new" : "select");
+  useEffect(() => { setMode(value && !categories.includes(value) ? "new" : "select"); }, [resetKey]);
+  const selectValue = mode === "new" ? "__new__" : categories.includes(value) ? value : (categories[0] ?? "__new__");
+  return <>
+    <select value={selectValue} onChange={(event) => { if (event.target.value === "__new__") { setMode("new"); onChange(""); } else { setMode("select"); onChange(event.target.value); } }}>
+      {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+      <option value="__new__">＋ 新しいカテゴリを作成</option>
+    </select>
+    {mode === "new" && <input autoFocus placeholder="新しいカテゴリ名を入力" value={value} onChange={(event) => onChange(event.target.value)} />}
+  </>;
+}
+
+// Long-press-to-drag reordering + rename, for the interview card categories.
+// Only the grip icon starts a drag (so tapping the name to rename it can't
+// be mistaken for the start of a drag). A press has to hold for LONG_PRESS_MS
+// without moving far before it turns into a drag, so an ordinary tap or a
+// page scroll never gets hijacked.
+const LONG_PRESS_MS = 350;
+function CategoryManager({ categories, onReorder, onRename, onClose }: { categories: string[]; onReorder: (next: string[]) => void; onRename: (oldName: string, newName: string) => void; onClose: () => void }) {
+  const [order, setOrder] = useState(categories);
+  useEffect(() => setOrder(categories), [categories]);
+  const [draggingName, setDraggingName] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const dragState = useRef<{ name: string; startY: number; rowHeight: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean } | null>(null);
+
+  const startPress = (name: string, event: React.PointerEvent<HTMLSpanElement>) => {
+    // Capture the actual element and pointer id synchronously — React nulls
+    // out event.currentTarget as soon as this handler returns, so reading
+    // it from inside the setTimeout callback below would crash.
+    const handleEl = event.currentTarget;
+    const row = handleEl.closest(".category-manager-row") as HTMLElement | null;
+    const rowHeight = row?.offsetHeight || 44;
+    const pointerId = event.pointerId;
+    const timer = setTimeout(() => {
+      if (dragState.current) {
+        dragState.current.dragging = true;
+        setDraggingName(name);
+        handleEl.setPointerCapture(pointerId);
+      }
+    }, LONG_PRESS_MS);
+    dragState.current = { name, startY: event.clientY, rowHeight, timer, dragging: false };
+  };
+  const movePress = (event: React.PointerEvent<HTMLSpanElement>) => {
+    const state = dragState.current;
+    if (!state) return;
+    const deltaY = event.clientY - state.startY;
+    if (!state.dragging) {
+      if (Math.abs(deltaY) > 12 && state.timer) { clearTimeout(state.timer); dragState.current = null; }
+      return;
+    }
+    const shift = Math.round(deltaY / state.rowHeight);
+    if (!shift) return;
+    const fromIndex = order.indexOf(state.name);
+    const toIndex = Math.max(0, Math.min(order.length - 1, fromIndex + shift));
+    if (toIndex === fromIndex) return;
+    const next = [...order];
+    next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, state.name);
+    state.startY = event.clientY;
+    setOrder(next);
+    onReorder(next);
+  };
+  const endPress = () => {
+    if (dragState.current?.timer) clearTimeout(dragState.current.timer);
+    dragState.current = null;
+    setDraggingName(null);
+  };
+  const commitRename = (name: string) => { onRename(name, editValue); setEditingName(null); };
+
+  return <div className="modal-backdrop" onClick={onClose}>
+    <section className="editor-modal category-manager-modal" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-header"><div><p className="eyebrow">CATEGORIES</p><h2>カテゴリを編集</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div>
+      <p className="category-manager-hint">アイコンを長押ししてドラッグすると並び替えられます。名前をタップすると変更できます（そのカテゴリの全カードにも反映されます）。</p>
+      <div className="category-manager-list">
+        {order.map((name) => <div key={name} className={`category-manager-row ${draggingName === name ? "dragging" : ""}`}>
+          <span className="drag-handle" onPointerDown={(event) => startPress(name, event)} onPointerMove={movePress} onPointerUp={endPress} onPointerCancel={endPress}><GripVertical size={16} /></span>
+          {editingName === name
+            ? <input autoFocus value={editValue} onChange={(event) => setEditValue(event.target.value)} onBlur={() => commitRename(name)} onKeyDown={(event) => { if (event.key === "Enter") commitRename(name); if (event.key === "Escape") setEditingName(null); }} />
+            : <button className="category-manager-name" onClick={() => { setEditingName(name); setEditValue(name); }}>{name}<Pencil size={13} /></button>}
+        </div>)}
+        {!order.length && <div className="empty-state"><BookOpen size={18} />カテゴリはまだありません。</div>}
+      </div>
+    </section>
+  </div>;
+}
+
 function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; onNavigate: (s: Screen) => void }) {
   const [flipped, setFlipped] = useState<string | null>(null);
   const [show, setShow] = useState(false);
   const [editing, setEditing] = useState<InterviewCard | null>(null);
   const [category, setCategory] = useState("すべて");
+  const [managingCategories, setManagingCategories] = useState(false);
   const [draft, setDraft] = useState({ question: "", answer: "", category: "基本" });
-  const categories = ["すべて", ...Array.from(new Set(cards.map((card) => card.category)))];
+  const [categoryOrder, setCategoryOrder] = usePersisted<string[]>("cc_card_categories", Array.from(new Set(starterCards.map((card) => card.category))));
+
+  // Keep categoryOrder in sync with whatever categories actually show up on
+  // cards (e.g. restored from a backup, or from the starter data), without
+  // ever dropping a category the user created but hasn't used yet.
+  useEffect(() => {
+    const missing = Array.from(new Set(cards.map((card) => card.category))).filter((item) => !categoryOrder.includes(item));
+    if (missing.length) setCategoryOrder((current) => [...current, ...missing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards]);
+
+  const categories = ["すべて", ...categoryOrder];
   const visibleCards = category === "すべて" ? cards : cards.filter((card) => card.category === category);
+
+  const ensureCategory = (name: string) => {
+    const trimmed = name.trim();
+    if (trimmed && !categoryOrder.includes(trimmed)) setCategoryOrder((current) => [...current, trimmed]);
+    return trimmed;
+  };
+  const renameCategory = (oldName: string, newNameRaw: string) => {
+    const newName = newNameRaw.trim();
+    if (!newName || newName === oldName) return;
+    if (categoryOrder.includes(newName)) return toast.error("そのカテゴリ名はすでに使われています");
+    setCategoryOrder((current) => current.map((item) => (item === oldName ? newName : item)));
+    setCards((current) => current.map((card) => (card.category === oldName ? { ...card, category: newName } : card)));
+    if (category === oldName) setCategory(newName);
+    if (draft.category === oldName) setDraft((current) => ({ ...current, category: newName }));
+    toast.success("カテゴリ名を変更しました");
+  };
   const add = () => {
+    const finalCategory = ensureCategory(draft.category) || "基本";
     if (!draft.question || !draft.answer) return toast.error("質問と答えを入力してください");
-    setCards((current) => [...current, { ...draft, id: `card-${Date.now()}` }]);
+    setCards((current) => [...current, { ...draft, category: finalCategory, id: `card-${Date.now()}` }]);
     setDraft({ question: "", answer: "", category: "基本" });
     setShow(false);
     toast.success("面接カードを追加しました");
   };
   const saveEdit = () => {
     if (!editing || !editing.question || !editing.answer) return toast.error("質問と答えを入力してください");
-    setCards((current) => current.map((card) => card.id === editing.id ? editing : card));
+    const finalCategory = ensureCategory(editing.category) || editing.category;
+    setCards((current) => current.map((card) => card.id === editing.id ? { ...editing, category: finalCategory } : card));
     setEditing(null);
     toast.success("面接カードを更新しました");
   };
   return <div className="screen">
     <Header title="面接カード" eyebrow="INTERVIEW PREP" onMenu={() => onNavigate("settings")} />
     <section className="page-lead"><div><p className="eyebrow">FLIP CARDS</p><h2>タップして、答えを確認</h2><p>カードをタップして回答を確認。鉛筆ボタンから内容もいつでも書き換えられます。</p></div><button className="primary-button" onClick={() => setShow((value) => !value)}><Plus size={17} />カード追加</button></section>
-    <div className="category-filter"><span className="filter-label">カテゴリ</span>{categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}<small>{item === "すべて" ? cards.length : cards.filter((card) => card.category === item).length}</small></button>)}</div>
+    <div className="category-filter"><span className="filter-label">カテゴリ</span>{categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}<small>{item === "すべて" ? cards.length : cards.filter((card) => card.category === item).length}</small></button>)}<button className="icon-button category-manage-button" aria-label="カテゴリを編集" onClick={() => setManagingCategories(true)}><Settings size={15} /></button></div>
     <div className="card-filter"><span>{visibleCards.length} cards</span><span className="hint"><RefreshCw size={14} />表と裏をタップで切替</span></div>
     <div className="flashcard-grid">{visibleCards.map((card) => <div key={card.id} className={`flashcard-wrap ${flipped === card.id ? "flipped" : ""}`}><button className={`flashcard ${flipped === card.id ? "flipped" : ""}`} onClick={() => setFlipped(flipped === card.id ? null : card.id)}><div className="flash-front"><span className="card-label">{card.category} · QUESTION</span><h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category} · ANSWER</span><p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button><button className="card-edit-button" aria-label={`${card.question}を編集`} onClick={() => setEditing(card)}><Settings size={15} /></button></div>)}</div>
     {!visibleCards.length && <div className="empty-state large"><BookOpen size={24} />このカテゴリにはカードがありません。</div>}
-    {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<input value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} /></label><label>質問<textarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<textarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
-    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>面接カードを編集</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid"><label className="wide">カテゴリ<input value={editing.category} onChange={(event) => setEditing({ ...editing, category: event.target.value })} /></label><label className="wide">質問<textarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<textarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { setCards((current) => current.filter((card) => card.id !== editing.id)); setEditing(null); toast.success("面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
+    {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<CategoryPicker value={draft.category} categories={categoryOrder} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label><label>質問<textarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<textarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
+    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>面接カードを編集</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid"><label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label><label className="wide">質問<textarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<textarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { setCards((current) => current.filter((card) => card.id !== editing.id)); setEditing(null); toast.success("面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
+    {managingCategories && <CategoryManager categories={categoryOrder} onReorder={setCategoryOrder} onRename={renameCategory} onClose={() => setManagingCategories(false)} />}
   </div>;
 }
 function ScheduleScreen({ schedule, setSchedule, onNavigate }: { schedule: ScheduleItem[]; setSchedule: Dispatch<SetStateAction<ScheduleItem[]>>; onNavigate: (s: Screen) => void }) { const [show, setShow] = useState(false); const [draft, setDraft] = useState({ title: "", date: today, time: "19:00", category: "その他" }); const add = () => { if (!draft.title) return toast.error("予定名を入力してください"); setSchedule((c) => [...c, { ...draft, id: `task-${Date.now()}`, done: false }].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))); setDraft({ title: "", date: today, time: "19:00", category: "その他" }); setShow(false); toast.success("予定を追加しました"); }; return <div className="screen"><Header title="就活スケジュール" eyebrow="YOUR TIMELINE" onMenu={() => onNavigate("settings")} /><section className="schedule-hero"><div><p className="eyebrow light">KEEP MOVING</p><h2>締切から逆算して、<br />今日やることを決める。</h2></div><CalendarDays size={48} /></section><div className="section-heading"><div><p className="eyebrow">TIMELINE</p><h2>やることリスト</h2></div><button className="primary-button" onClick={() => setShow((v) => !v)}><Plus size={17} />予定追加</button></div>{show && <div className="inline-form schedule-form"><div className="form-grid"><label className="wide">予定名<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="例：一次面接の準備" /></label><label>日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label><label>時間<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label><label className="wide">カテゴリ<input value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} /></label></div><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}<div className="timeline">{schedule.map((item) => <div className={`timeline-item ${item.done ? "done" : ""}`} key={item.id}><button className="check-circle" onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main"><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><p>{item.category}</p></div><button className="delete-plain" onClick={() => setSchedule((c) => c.filter((x) => x.id !== item.id))}><Trash2 size={16} /></button></div>)}</div></div>; }
@@ -104,7 +230,13 @@ export default function Home() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     let refreshing = false;
-    const registrationPromise = navigator.serviceWorker.register("sw.js");
+    // Register with an absolute, BASE_PATH-anchored URL and an explicit
+    // scope — not a bare relative "sw.js". A relative path resolves against
+    // the CURRENT window.location, and after an in-app "Go Home" navigation
+    // (see NotFound.tsx) that location has been rewritten to the domain
+    // root by wouter, which would try to load "/sw.js" (404) instead of
+    // "/career-compass-app/sw.js" and silently fail to register at all.
+    const registrationPromise = navigator.serviceWorker.register(`${BASE_PATH}/sw.js`, { scope: `${BASE_PATH}/` });
     const onControllerChange = () => { if (!refreshing) { refreshing = true; window.location.reload(); } };
     navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
     registrationPromise.then((registration) => {

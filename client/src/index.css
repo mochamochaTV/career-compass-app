@@ -88,4 +88,15 @@ body { background: var(--background); color: var(--foreground); }
 .card-edit-button { position: absolute; z-index: 3; top: 12px; right: 12px; width: 31px; height: 31px; display: grid; place-items: center; color: #e5e0ff; background: #ffffff24; border: 1px solid #ffffff30; border-radius: 9px; }
 .card-edit-button:hover { color: #fff; background: #ffffff42; }
 .card-editor-modal { width: min(600px, 100%); }
+.category-manage-button { flex: 0 0 auto; margin-left: auto; }
+.category-manager-modal { width: min(480px, 100%); }
+.category-manager-hint { margin: 2px 0 18px; color: #8d8d9e; font-size: 11px; line-height: 1.6; }
+.category-manager-list { display: grid; gap: 8px; }
+.category-manager-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 4px; border: 1px solid #ececf3; border-radius: 12px; background: #fbfbfe; }
+.category-manager-row.dragging { border-color: #a99bf4; background: #f1efff; box-shadow: 0 8px 20px #6654d926; }
+.category-manager-row .drag-handle { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 auto; color: #b0b0c2; touch-action: none; -webkit-user-select: none; user-select: none; cursor: grab; }
+.category-manager-row .drag-handle:active { cursor: grabbing; }
+.category-manager-name { display: inline-flex; align-items: center; gap: 7px; flex: 1; padding: 8px 4px; color: #313147; background: transparent; font-size: 13px; font-weight: 600; text-align: left; }
+.category-manager-name svg { color: #b0b0c2; }
+.category-manager-row input { flex: 1; }
 @media (max-width: 760px) { [data-sonner-toaster][data-position="bottom-center"], [data-sonner-toaster][data-position="bottom-right"], [data-sonner-toaster][data-position="bottom-left"] { bottom: 88px !important; } .flashcard-wrap { min-height: 194px; } }

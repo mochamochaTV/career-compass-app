@@ -1,20 +1,29 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { BASE_PATH } from "@/lib/basePath";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Router as WouterRouter, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
+  //
+  // `base` matters here: this app can be deployed at a domain root or at a
+  // GitHub Pages project subpath (e.g. /career-compass-app/). Without it,
+  // wouter only ever matches "/" against the real root, so opening the app
+  // from its subpath (including every PWA launch) falls through to the
+  // catch-all NotFound route below.
   return (
-    <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
-      <Route component={NotFound} />
-    </Switch>
+    <WouterRouter base={BASE_PATH}>
+      <Switch>
+        <Route path={"/"} component={Home} />
+        <Route path={"/404"} component={NotFound} />
+        {/* Final fallback route */}
+        <Route component={NotFound} />
+      </Switch>
+    </WouterRouter>
   );
 }
 

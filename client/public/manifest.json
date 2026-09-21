@@ -1,0 +1,12 @@
+{
+  "name": "Career Compass",
+  "short_name": "Career Compass",
+  "description": "企業研究、面接カード、就活スケジュールをひとつにまとめるアプリ",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f7f7fb",
+  "theme_color": "#6654d9",
+  "lang": "ja",
+  "icons": []
+}

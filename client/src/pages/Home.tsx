@@ -3,7 +3,7 @@ import { strToU8 } from "fflate";
 import {
   ArrowDown, ArrowUp, BookOpen, BriefcaseBusiness, CalendarDays, Check,
   ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, Pencil, Plus,
-  RefreshCw, Search, Settings, Sparkles, Target, Trash2, Trophy, X,
+  RefreshCw, Search, Settings, Sparkles, Star, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createBackupZip, parseBackupBytes } from "@/lib/backup";
@@ -13,7 +13,10 @@ type Screen = "home" | "research" | "interview" | "schedule" | "settings";
 type ResearchMode = "research" | "summary";
 type RankMode = "interest" | "salary" | "benefits";
 export type Company = { id: string; name: string; industry: string; interest: number; salary: number | null; benefits: string; location: string; philosophy: string; person: string; notes: string; sources: string[]; updatedAt: string };
-export type InterviewCard = { id: string; question: string; answer: string; category: string };
+export type SelfRating = "excellent" | "good" | "fair" | "poor";
+export type InterviewCard = { id: string; question: string; answer: string; category: string; important?: boolean; rating?: SelfRating | null };
+const RATING_LABEL: Record<SelfRating, string> = { excellent: "優", good: "良", fair: "可", poor: "不可" };
+const RATING_ORDER: SelfRating[] = ["excellent", "good", "fair", "poor"];
 export type ScheduleItem = { id: string; title: string; date: string; time: string; category: string; done: boolean };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -146,12 +149,106 @@ function CategoryManager({ categories, onReorder, onRename, onClose }: { categor
   </div>;
 }
 
+// Reorder the interview cards themselves. Works the same way as
+// CategoryManager above (long-press the grip icon to drag), plus a pair of
+// up/down buttons on every row so reordering never depends on getting a
+// drag gesture right — tapping an arrow is the "as easy as possible" path.
+// `visibleIds` is whatever the current category filter shows, in their
+// current relative order; reordering only rearranges those cards among
+// themselves and leaves every other card's position untouched.
+function CardOrderManager({ cards, visibleIds, onReorder, onClose }: { cards: InterviewCard[]; visibleIds: string[]; onReorder: (next: InterviewCard[]) => void; onClose: () => void }) {
+  const [order, setOrder] = useState(visibleIds);
+  useEffect(() => setOrder(visibleIds), [visibleIds]);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const dragState = useRef<{ id: string; startY: number; rowHeight: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean } | null>(null);
+
+  const commit = (nextOrder: string[]) => {
+    setOrder(nextOrder);
+    const cardById = new Map(cards.map((c) => [c.id, c]));
+    const visibleSet = new Set(visibleIds);
+    let cursor = 0;
+    const next = cards.map((card) => (visibleSet.has(card.id) ? cardById.get(nextOrder[cursor++])! : card));
+    onReorder(next);
+  };
+
+  const startPress = (id: string, event: React.PointerEvent<HTMLSpanElement>) => {
+    const handleEl = event.currentTarget;
+    const row = handleEl.closest(".category-manager-row") as HTMLElement | null;
+    const rowHeight = row?.offsetHeight || 44;
+    const pointerId = event.pointerId;
+    const timer = setTimeout(() => {
+      if (dragState.current) {
+        dragState.current.dragging = true;
+        setDraggingId(id);
+        handleEl.setPointerCapture(pointerId);
+      }
+    }, LONG_PRESS_MS);
+    dragState.current = { id, startY: event.clientY, rowHeight, timer, dragging: false };
+  };
+  const movePress = (event: React.PointerEvent<HTMLSpanElement>) => {
+    const state = dragState.current;
+    if (!state) return;
+    const deltaY = event.clientY - state.startY;
+    if (!state.dragging) {
+      if (Math.abs(deltaY) > 12 && state.timer) { clearTimeout(state.timer); dragState.current = null; }
+      return;
+    }
+    const shift = Math.round(deltaY / state.rowHeight);
+    if (!shift) return;
+    const fromIndex = order.indexOf(state.id);
+    const toIndex = Math.max(0, Math.min(order.length - 1, fromIndex + shift));
+    if (toIndex === fromIndex) return;
+    const next = [...order];
+    next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, state.id);
+    state.startY = event.clientY;
+    commit(next);
+  };
+  const endPress = () => {
+    if (dragState.current?.timer) clearTimeout(dragState.current.timer);
+    dragState.current = null;
+    setDraggingId(null);
+  };
+  const moveByTap = (id: string, delta: number) => {
+    const fromIndex = order.indexOf(id);
+    const toIndex = fromIndex + delta;
+    if (toIndex < 0 || toIndex >= order.length) return;
+    const next = [...order];
+    [next[fromIndex], next[toIndex]] = [next[toIndex], next[fromIndex]];
+    commit(next);
+  };
+  const cardById = new Map(cards.map((c) => [c.id, c]));
+
+  return <div className="modal-backdrop" onClick={onClose}>
+    <section className="editor-modal category-manager-modal" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-header"><div><p className="eyebrow">CARD ORDER</p><h2>カードの並び替え</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div>
+      <p className="category-manager-hint">アイコンを長押ししてドラッグするか、矢印ボタンで順番を入れ替えられます。</p>
+      <div className="category-manager-list">
+        {order.map((id, i) => {
+          const card = cardById.get(id);
+          if (!card) return null;
+          return <div key={id} className={`category-manager-row ${draggingId === id ? "dragging" : ""}`}>
+            <span className="drag-handle" onPointerDown={(event) => startPress(id, event)} onPointerMove={movePress} onPointerUp={endPress} onPointerCancel={endPress}><GripVertical size={16} /></span>
+            <div className="card-order-name"><small>{card.category}</small><span>{card.question}</span></div>
+            <div className="rank-actions">
+              <button aria-label="上へ" disabled={i === 0} onClick={() => moveByTap(id, -1)}><ArrowUp size={15} /></button>
+              <button aria-label="下へ" disabled={i === order.length - 1} onClick={() => moveByTap(id, 1)}><ArrowDown size={15} /></button>
+            </div>
+          </div>;
+        })}
+        {!order.length && <div className="empty-state"><BookOpen size={18} />このカテゴリにはカードがありません。</div>}
+      </div>
+    </section>
+  </div>;
+}
+
 function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; onNavigate: (s: Screen) => void }) {
   const [flipped, setFlipped] = useState<string | null>(null);
   const [show, setShow] = useState(false);
   const [editing, setEditing] = useState<InterviewCard | null>(null);
   const [category, setCategory] = useState("すべて");
   const [managingCategories, setManagingCategories] = useState(false);
+  const [orderingCards, setOrderingCards] = useState(false);
   const [draft, setDraft] = useState({ question: "", answer: "", category: "基本" });
   const [categoryOrder, setCategoryOrder] = usePersisted<string[]>("cc_card_categories", Array.from(new Set(starterCards.map((card) => card.category))));
 
@@ -185,7 +282,9 @@ function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard
   const add = () => {
     const finalCategory = ensureCategory(draft.category) || "基本";
     if (!draft.question || !draft.answer) return toast.error("質問と答えを入力してください");
-    setCards((current) => [...current, { ...draft, category: finalCategory, id: `card-${Date.now()}` }]);
+    // New cards go to the front, not the back — a card you just wrote about
+    // is usually the one you want to see (and keep practicing) first.
+    setCards((current) => [{ ...draft, category: finalCategory, id: `card-${Date.now()}` }, ...current]);
     setDraft({ question: "", answer: "", category: "基本" });
     setShow(false);
     toast.success("面接カードを追加しました");
@@ -197,16 +296,32 @@ function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard
     setEditing(null);
     toast.success("面接カードを更新しました");
   };
+  const toggleImportant = (id: string) => setCards((current) => current.map((card) => card.id === id ? { ...card, important: !card.important } : card));
+  // Tapping the currently-selected rating again clears it, so "no rating
+  // yet" stays reachable without a separate button.
+  const setRating = (id: string, rating: SelfRating) => setCards((current) => current.map((card) => card.id === id ? { ...card, rating: card.rating === rating ? null : rating } : card));
   return <div className="screen">
     <Header title="面接カード" eyebrow="INTERVIEW PREP" onMenu={() => onNavigate("settings")} />
     <section className="page-lead"><div><p className="eyebrow">FLIP CARDS</p><h2>タップして、答えを確認</h2><p>カードをタップして回答を確認。鉛筆ボタンから内容もいつでも書き換えられます。</p></div><button className="primary-button" onClick={() => setShow((value) => !value)}><Plus size={17} />カード追加</button></section>
     <div className="category-filter"><span className="filter-label">カテゴリ</span>{categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}<small>{item === "すべて" ? cards.length : cards.filter((card) => card.category === item).length}</small></button>)}<button className="icon-button category-manage-button" aria-label="カテゴリを編集" onClick={() => setManagingCategories(true)}><Settings size={15} /></button></div>
-    <div className="card-filter"><span>{visibleCards.length} cards</span><span className="hint"><RefreshCw size={14} />表と裏をタップで切替</span></div>
-    <div className="flashcard-grid">{visibleCards.map((card) => <div key={card.id} className={`flashcard-wrap ${flipped === card.id ? "flipped" : ""}`}><button className={`flashcard ${flipped === card.id ? "flipped" : ""}`} onClick={() => setFlipped(flipped === card.id ? null : card.id)}><div className="flash-front"><span className="card-label">{card.category} · QUESTION</span><h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category} · ANSWER</span><p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button><button className="card-edit-button" aria-label={`${card.question}を編集`} onClick={() => setEditing(card)}><Settings size={15} /></button></div>)}</div>
+    <div className="card-filter"><span>{visibleCards.length} cards</span><button className="text-button" onClick={() => setOrderingCards(true)}><GripVertical size={14} />並び替え</button><span className="hint"><RefreshCw size={14} />表と裏をタップで切替</span></div>
+    <div className="flashcard-grid">{visibleCards.map((card) => <div key={card.id} className="flashcard-item">
+      <div className={`flashcard-wrap ${flipped === card.id ? "flipped" : ""}`}>
+        <button className={`flashcard ${flipped === card.id ? "flipped" : ""}`} onClick={() => setFlipped(flipped === card.id ? null : card.id)}><div className="flash-front"><span className="card-label">{card.category} · QUESTION</span><h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category} · ANSWER</span><p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
+        <button className="card-edit-button" aria-label={`${card.question}を編集`} onClick={() => setEditing(card)}><Settings size={15} /></button>
+      </div>
+      {/* Lives outside the flip card, not on either face, so it stays put
+          and tappable no matter which side (question/answer) is showing. */}
+      <div className="flashcard-footer">
+        <button className={`star-toggle ${card.important ? "active" : ""}`} aria-label={card.important ? "重要を解除" : "重要にする"} onClick={() => toggleImportant(card.id)}><Star size={16} fill={card.important ? "currentColor" : "none"} /></button>
+        <div className="rating-group">{RATING_ORDER.map((r) => <button key={r} className={`rating-${r} ${card.rating === r ? "active" : ""}`} onClick={() => setRating(card.id, r)}>{RATING_LABEL[r]}</button>)}</div>
+      </div>
+    </div>)}</div>
     {!visibleCards.length && <div className="empty-state large"><BookOpen size={24} />このカテゴリにはカードがありません。</div>}
     {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<CategoryPicker value={draft.category} categories={categoryOrder} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label><label>質問<textarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<textarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
     {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>面接カードを編集</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid"><label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label><label className="wide">質問<textarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<textarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { setCards((current) => current.filter((card) => card.id !== editing.id)); setEditing(null); toast.success("面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
     {managingCategories && <CategoryManager categories={categoryOrder} onReorder={setCategoryOrder} onRename={renameCategory} onClose={() => setManagingCategories(false)} />}
+    {orderingCards && <CardOrderManager cards={cards} visibleIds={visibleCards.map((card) => card.id)} onReorder={setCards} onClose={() => setOrderingCards(false)} />}
   </div>;
 }
 function ScheduleScreen({ schedule, setSchedule, onNavigate }: { schedule: ScheduleItem[]; setSchedule: Dispatch<SetStateAction<ScheduleItem[]>>; onNavigate: (s: Screen) => void }) { const [show, setShow] = useState(false); const [draft, setDraft] = useState({ title: "", date: today, time: "19:00", category: "その他" }); const add = () => { if (!draft.title) return toast.error("予定名を入力してください"); setSchedule((c) => [...c, { ...draft, id: `task-${Date.now()}`, done: false }].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))); setDraft({ title: "", date: today, time: "19:00", category: "その他" }); setShow(false); toast.success("予定を追加しました"); }; return <div className="screen"><Header title="就活スケジュール" eyebrow="YOUR TIMELINE" onMenu={() => onNavigate("settings")} /><section className="schedule-hero"><div><p className="eyebrow light">KEEP MOVING</p><h2>締切から逆算して、<br />今日やることを決める。</h2></div><CalendarDays size={48} /></section><div className="section-heading"><div><p className="eyebrow">TIMELINE</p><h2>やることリスト</h2></div><button className="primary-button" onClick={() => setShow((v) => !v)}><Plus size={17} />予定追加</button></div>{show && <div className="inline-form schedule-form"><div className="form-grid"><label className="wide">予定名<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="例：一次面接の準備" /></label><label>日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label><label>時間<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label><label className="wide">カテゴリ<input value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} /></label></div><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}<div className="timeline">{schedule.map((item) => <div className={`timeline-item ${item.done ? "done" : ""}`} key={item.id}><button className="check-circle" onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main"><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><p>{item.category}</p></div><button className="delete-plain" onClick={() => setSchedule((c) => c.filter((x) => x.id !== item.id))}><Trash2 size={16} /></button></div>)}</div></div>; }

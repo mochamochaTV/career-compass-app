@@ -88,6 +88,8 @@ body { background: var(--background); color: var(--foreground); }
 .category-filter button.active { color: #fff; background: #6654d9; border-color: #6654d9; }
 .category-filter small { min-width: 15px; padding: 2px 4px; border-radius: 5px; background: #f0eff6; font-size: 9px; }
 .category-filter button.active small { color: #6654d9; background: #fff; }
+.category-chip { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.category-chip.dragging { z-index: 5; color: #fff; background: #6654d9; border-color: #6654d9; box-shadow: 0 10px 22px #6654d94d; transform: scale(1.06); }
 .flashcard-wrap { position: relative; min-height: 210px; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .flashcard-wrap .flashcard { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* Picked up by a long press (see startCardDrag in InterviewScreen) — lifts
@@ -118,6 +120,17 @@ body { background: var(--background); color: var(--foreground); }
 .rating-good.active { color: #fff; background: #6bbda7; }
 .rating-fair.active { color: #fff; background: #e0a53e; }
 .rating-poor.active { color: #fff; background: #d16464; }
+/* Sticks to the top-right of the interview screen as it scrolls (see
+   InterviewTimer) — starts in normal flow just under the header, then
+   pins itself once you scroll past it, so it stays visible while
+   practicing an answer without floating over the header at the very top. */
+.timer-bar { position: sticky; top: 12px; z-index: 25; display: flex; justify-content: flex-end; margin: -6px 0 14px; pointer-events: none; }
+.interview-timer { display: flex; align-items: center; gap: 6px; pointer-events: auto; }
+.timer-toggle { display: flex; align-items: center; gap: 8px; padding: 10px 16px; color: #fff; background: #6654d9; border-radius: 999px; box-shadow: 0 10px 22px #6654d94d; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.interview-timer.running .timer-toggle { background: #4caa8e; box-shadow: 0 10px 22px #4caa8e4d; }
+.timer-display { min-width: 46px; text-align: left; }
+.timer-reset { display: grid; place-items: center; width: 36px; height: 36px; color: #77778c; background: #fff; border: 1px solid #ececf3; border-radius: 999px; box-shadow: 0 6px 14px #24243a14; }
+.timer-reset:hover { color: #6654d9; border-color: #d8d1ff; }
 .card-editor-modal { width: min(600px, 100%); }
 .category-manage-button { flex: 0 0 auto; margin-left: auto; }
 .category-manager-modal { width: min(480px, 100%); }

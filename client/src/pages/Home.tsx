@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { strToU8 } from "fflate";
 import {
   ArrowDown, ArrowUp, BookOpen, BriefcaseBusiness, CalendarDays, Check,
-  ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, Pencil, Plus,
-  RefreshCw, Search, Settings, Sparkles, Star, Target, Trash2, Trophy, X,
+  ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, Pause, Pencil, Play, Plus,
+  RefreshCw, RotateCcw, Search, Settings, Sparkles, Star, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createBackupZip, parseBackupBytes } from "@/lib/backup";
@@ -89,76 +89,27 @@ function CategoryPicker({ value, categories, onChange, resetKey }: { value: stri
   </>;
 }
 
-// Long-press-to-drag reordering + rename, for the interview card categories.
-// Only the grip icon starts a drag (so tapping the name to rename it can't
-// be mistaken for the start of a drag). A press has to hold for LONG_PRESS_MS
-// without moving far before it turns into a drag, so an ordinary tap or a
-// page scroll never gets hijacked.
+// Renaming for the interview card categories. Reordering used to live here
+// too (long-press the grip icon to drag a row), but that's now done inline
+// on the category chips themselves (see startCategoryDrag/moveCategoryDrag/
+// endCategoryDrag in InterviewScreen) — this modal is rename-only now.
 const LONG_PRESS_MS = 350;
-function CategoryManager({ categories, onReorder, onRename, onClose }: { categories: string[]; onReorder: (next: string[]) => void; onRename: (oldName: string, newName: string) => void; onClose: () => void }) {
-  const [order, setOrder] = useState(categories);
-  useEffect(() => setOrder(categories), [categories]);
-  const [draggingName, setDraggingName] = useState<string | null>(null);
+function CategoryManager({ categories, onRename, onClose }: { categories: string[]; onRename: (oldName: string, newName: string) => void; onClose: () => void }) {
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
-  const dragState = useRef<{ name: string; startY: number; rowHeight: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean } | null>(null);
-
-  const startPress = (name: string, event: React.PointerEvent<HTMLSpanElement>) => {
-    // Capture the actual element and pointer id synchronously — React nulls
-    // out event.currentTarget as soon as this handler returns, so reading
-    // it from inside the setTimeout callback below would crash.
-    const handleEl = event.currentTarget;
-    const row = handleEl.closest(".category-manager-row") as HTMLElement | null;
-    const rowHeight = row?.offsetHeight || 44;
-    const pointerId = event.pointerId;
-    const timer = setTimeout(() => {
-      if (dragState.current) {
-        dragState.current.dragging = true;
-        setDraggingName(name);
-        handleEl.setPointerCapture(pointerId);
-      }
-    }, LONG_PRESS_MS);
-    dragState.current = { name, startY: event.clientY, rowHeight, timer, dragging: false };
-  };
-  const movePress = (event: React.PointerEvent<HTMLSpanElement>) => {
-    const state = dragState.current;
-    if (!state) return;
-    const deltaY = event.clientY - state.startY;
-    if (!state.dragging) {
-      if (Math.abs(deltaY) > 12 && state.timer) { clearTimeout(state.timer); dragState.current = null; }
-      return;
-    }
-    const shift = Math.round(deltaY / state.rowHeight);
-    if (!shift) return;
-    const fromIndex = order.indexOf(state.name);
-    const toIndex = Math.max(0, Math.min(order.length - 1, fromIndex + shift));
-    if (toIndex === fromIndex) return;
-    const next = [...order];
-    next.splice(fromIndex, 1);
-    next.splice(toIndex, 0, state.name);
-    state.startY = event.clientY;
-    setOrder(next);
-    onReorder(next);
-  };
-  const endPress = () => {
-    if (dragState.current?.timer) clearTimeout(dragState.current.timer);
-    dragState.current = null;
-    setDraggingName(null);
-  };
   const commitRename = (name: string) => { onRename(name, editValue); setEditingName(null); };
 
   return <div className="modal-backdrop" onClick={onClose}>
     <section className="editor-modal category-manager-modal" onClick={(event) => event.stopPropagation()}>
-      <div className="modal-header"><div><p className="eyebrow">CATEGORIES</p><h2>カテゴリを編集</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div>
-      <p className="category-manager-hint">アイコンを長押ししてドラッグすると並び替えられます。名前をタップすると変更できます（そのカテゴリの全カードにも反映されます）。</p>
+      <div className="modal-header"><div><p className="eyebrow">CATEGORIES</p><h2>カテゴリ名を変更</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div>
+      <p className="category-manager-hint">名前をタップすると変更できます（そのカテゴリの全カードにも反映されます）。並び替えは、カテゴリのボタン自体を長押ししてドラッグしてください。</p>
       <div className="category-manager-list">
-        {order.map((name) => <div key={name} className={`category-manager-row ${draggingName === name ? "dragging" : ""}`}>
-          <span className="drag-handle" onPointerDown={(event) => startPress(name, event)} onPointerMove={movePress} onPointerUp={endPress} onPointerCancel={endPress}><GripVertical size={16} /></span>
+        {categories.map((name) => <div key={name} className="category-manager-row">
           {editingName === name
             ? <input autoFocus value={editValue} onChange={(event) => setEditValue(event.target.value)} onBlur={() => commitRename(name)} onKeyDown={(event) => { if (event.key === "Enter") commitRename(name); if (event.key === "Escape") setEditingName(null); }} />
             : <button className="category-manager-name" onClick={() => { setEditingName(name); setEditValue(name); }}>{name}<Pencil size={13} /></button>}
         </div>)}
-        {!order.length && <div className="empty-state"><BookOpen size={18} />カテゴリはまだありません。</div>}
+        {!categories.length && <div className="empty-state"><BookOpen size={18} />カテゴリはまだありません。</div>}
       </div>
     </section>
   </div>;
@@ -168,6 +119,53 @@ function CategoryManager({ categories, onReorder, onRename, onClose }: { categor
 // straight to the cards in the grid (see startCardDrag/moveCardDrag/
 // endCardDrag in InterviewScreen below) — no separate "reorder" screen or
 // button needed; press and hold a card, then drag it where it should go.
+
+// A stopwatch for timing a practice answer: tap to start, tap again to
+// pause, and (once paused) a small reset button appears to zero it out.
+// Elapsed time is always derived from Date.now() minus a recorded start
+// instant rather than incremented tick by tick, so it can't drift even if
+// the interval is throttled (e.g. the phone screen dims mid-answer).
+function InterviewTimer() {
+  const [running, setRunning] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      if (startedAtRef.current != null) setElapsedMs(Date.now() - startedAtRef.current);
+    }, 250);
+    return () => clearInterval(id);
+  }, [running]);
+
+  const toggle = () => {
+    if (running) {
+      setRunning(false);
+    } else {
+      startedAtRef.current = Date.now() - elapsedMs;
+      setRunning(true);
+    }
+  };
+  const reset = () => {
+    setRunning(false);
+    setElapsedMs(0);
+    startedAtRef.current = null;
+  };
+
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const mm = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const ss = String(totalSeconds % 60).padStart(2, "0");
+
+  return <div className="timer-bar">
+    <div className={`interview-timer ${running ? "running" : ""}`}>
+      <button className="timer-toggle" aria-label={running ? "タイマーを一時停止" : "タイマーを開始"} onClick={toggle}>
+        {running ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+        <span className="timer-display">{mm}:{ss}</span>
+      </button>
+      {!running && elapsedMs > 0 && <button className="timer-reset" aria-label="タイマーをリセット" onClick={reset}><RotateCcw size={14} /></button>}
+    </div>
+  </div>;
+}
 
 function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; onNavigate: (s: Screen) => void }) {
   const [flipped, setFlipped] = useState<string | null>(null);
@@ -310,10 +308,72 @@ function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard
     setDraggingCardId(null);
     setTimeout(() => { justDraggedRef.current = false; }, 0);
   };
+
+  // Same long-press-drag pattern as the cards above, applied to the category
+  // chips instead: pointer capture on the stable filter-row container (never
+  // the chip itself, which can shift position mid-drag), a ref for the live
+  // order so fast pointermoves never read a stale array, and a "just
+  // dragged" guard so the drop doesn't also fire the chip's select-category
+  // click. "すべて" is a synthetic entry (not part of categoryOrder), so it's
+  // simply never made draggable and never shows up as a drop target.
+  const [draggingCategory, setDraggingCategory] = useState<string | null>(null);
+  const categoryDragState = useRef<{ name: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean } | null>(null);
+  const justDraggedCategoryRef = useRef(false);
+  const categoryFilterRef = useRef<HTMLDivElement>(null);
+  const categoryOrderDragRef = useRef<string[]>([]);
+  const startCategoryDrag = (name: string, event: React.PointerEvent<HTMLButtonElement>) => {
+    const pointerId = event.pointerId;
+    const timer = setTimeout(() => {
+      if (categoryDragState.current) {
+        categoryDragState.current.dragging = true;
+        justDraggedCategoryRef.current = true;
+        categoryOrderDragRef.current = [...categoryOrder];
+        setDraggingCategory(name);
+        categoryFilterRef.current?.setPointerCapture(pointerId);
+      }
+    }, LONG_PRESS_MS);
+    categoryDragState.current = { name, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false };
+  };
+  const moveCategoryDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const state = categoryDragState.current;
+    if (!state) return;
+    const deltaX = event.clientX - state.startX;
+    const deltaY = event.clientY - state.startY;
+    if (!state.dragging) {
+      if (Math.hypot(deltaX, deltaY) > 12 && state.timer) { clearTimeout(state.timer); categoryDragState.current = null; }
+      return;
+    }
+    const items = Array.from(categoryFilterRef.current?.querySelectorAll<HTMLElement>(".category-chip") ?? []);
+    if (!items.length) return;
+    let closestIndex = -1;
+    let closestDist = Infinity;
+    items.forEach((el, i) => {
+      const rect = el.getBoundingClientRect();
+      const dist = Math.hypot(event.clientX - (rect.left + rect.width / 2), event.clientY - (rect.top + rect.height / 2));
+      if (dist < closestDist) { closestDist = dist; closestIndex = i; }
+    });
+    const order = categoryOrderDragRef.current;
+    const fromIndex = order.indexOf(state.name);
+    if (fromIndex === -1 || closestIndex === -1 || closestIndex === fromIndex) return;
+    const nextOrder = [...order];
+    nextOrder.splice(fromIndex, 1);
+    nextOrder.splice(closestIndex, 0, state.name);
+    categoryOrderDragRef.current = nextOrder;
+    setCategoryOrder(nextOrder);
+  };
+  const endCategoryDrag = () => {
+    if (categoryDragState.current?.timer) clearTimeout(categoryDragState.current.timer);
+    categoryDragState.current = null;
+    setDraggingCategory(null);
+    setTimeout(() => { justDraggedCategoryRef.current = false; }, 0);
+  };
   return <div className="screen">
     <Header title="面接カード" eyebrow="INTERVIEW PREP" onMenu={() => onNavigate("settings")} />
+    <InterviewTimer />
     <section className="page-lead"><div><p className="eyebrow">FLIP CARDS</p><h2>タップして、答えを確認</h2><p>カードをタップして回答を確認。鉛筆ボタンから内容もいつでも書き換えられます。</p></div><button className="primary-button" onClick={() => setShow((value) => !value)}><Plus size={17} />カード追加</button></section>
-    <div className="category-filter"><span className="filter-label">カテゴリ</span>{categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}<small>{item === "すべて" ? cards.length : cards.filter((card) => card.category === item).length}</small></button>)}<button className="icon-button category-manage-button" aria-label="カテゴリを編集" onClick={() => setManagingCategories(true)}><Settings size={15} /></button></div>
+    <div className="category-filter" ref={categoryFilterRef} onPointerMove={moveCategoryDrag} onPointerUp={endCategoryDrag} onPointerCancel={endCategoryDrag}><span className="filter-label">カテゴリ</span>{categories.map((item) => item === "すべて"
+      ? <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}<small>{cards.length}</small></button>
+      : <button key={item} className={`category-chip ${category === item ? "active" : ""} ${draggingCategory === item ? "dragging" : ""}`} onPointerDown={(event) => startCategoryDrag(item, event)} onClick={() => { if (justDraggedCategoryRef.current) return; setCategory(item); }}>{item}<small>{cards.filter((card) => card.category === item).length}</small></button>)}<button className="icon-button category-manage-button" aria-label="カテゴリを編集" onClick={() => setManagingCategories(true)}><Settings size={15} /></button></div>
     <div className="card-filter"><span>{visibleCards.length} cards</span><span className="hint"><GripVertical size={14} />長押しで並び替え</span><span className="hint"><RefreshCw size={14} />表と裏をタップで切替</span></div>
     {/* Rendered right above the card list (not below it) so opening the form
         with the "カード追加" button up top never requires scrolling past
@@ -336,7 +396,7 @@ function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard
     </div>)}</div>
     {!visibleCards.length && <div className="empty-state large"><BookOpen size={24} />このカテゴリにはカードがありません。</div>}
     {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>面接カードを編集</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid"><label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label><label className="wide">質問<AutoGrowTextarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<AutoGrowTextarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { setCards((current) => current.filter((card) => card.id !== editing.id)); setEditing(null); toast.success("面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
-    {managingCategories && <CategoryManager categories={categoryOrder} onReorder={setCategoryOrder} onRename={renameCategory} onClose={() => setManagingCategories(false)} />}
+    {managingCategories && <CategoryManager categories={categoryOrder} onRename={renameCategory} onClose={() => setManagingCategories(false)} />}
   </div>;
 }
 function ScheduleScreen({ schedule, setSchedule, onNavigate }: { schedule: ScheduleItem[]; setSchedule: Dispatch<SetStateAction<ScheduleItem[]>>; onNavigate: (s: Screen) => void }) { const [show, setShow] = useState(false); const [draft, setDraft] = useState({ title: "", date: today, time: "19:00", category: "その他" }); const add = () => { if (!draft.title) return toast.error("予定名を入力してください"); setSchedule((c) => [...c, { ...draft, id: `task-${Date.now()}`, done: false }].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))); setDraft({ title: "", date: today, time: "19:00", category: "その他" }); setShow(false); toast.success("予定を追加しました"); }; return <div className="screen"><Header title="就活スケジュール" eyebrow="YOUR TIMELINE" onMenu={() => onNavigate("settings")} /><section className="schedule-hero"><div><p className="eyebrow light">KEEP MOVING</p><h2>締切から逆算して、<br />今日やることを決める。</h2></div><CalendarDays size={48} /></section><div className="section-heading"><div><p className="eyebrow">TIMELINE</p><h2>やることリスト</h2></div><button className="primary-button" onClick={() => setShow((v) => !v)}><Plus size={17} />予定追加</button></div>{show && <div className="inline-form schedule-form"><div className="form-grid"><label className="wide">予定名<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="例：一次面接の準備" /></label><label>日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label><label>時間<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label><label className="wide">カテゴリ<input value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} /></label></div><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}<div className="timeline">{schedule.map((item) => <div className={`timeline-item ${item.done ? "done" : ""}`} key={item.id}><button className="check-circle" onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main"><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><p>{item.category}</p></div><button className="delete-plain" onClick={() => setSchedule((c) => c.filter((x) => x.id !== item.id))}><Trash2 size={16} /></button></div>)}</div></div>; }

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { strToU8 } from "fflate";
 import {
-  ArrowDown, ArrowUp, BookOpen, BriefcaseBusiness, CalendarDays, Check,
-  ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, Pause, Pencil, Play, Plus,
+  ArrowDown, ArrowLeft, ArrowUp, BookOpen, BriefcaseBusiness, CalendarDays, Check,
+  ChevronLeft, ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, Pause, Pencil, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Star, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -17,6 +17,16 @@ export type SelfRating = "excellent" | "good" | "fair" | "poor";
 export type InterviewCard = { id: string; question: string; answer: string; category: string; important?: boolean; rating?: SelfRating | null };
 const RATING_LABEL: Record<SelfRating, string> = { excellent: "優", good: "良", fair: "可", poor: "不可" };
 const RATING_ORDER: SelfRating[] = ["excellent", "good", "fair", "poor"];
+
+// Quiz mode: one-card-at-a-time practice, separate from the card management
+// screen. Its settings (how many questions, which ratings to draw from)
+// persist across visits (see cc_quiz_settings in InterviewHub) so picking
+// "10 questions, 優のみ" once doesn't need re-picking every time.
+type QuizRatingFilter = SelfRating | "none";
+type QuizSettings = { count: number | "all"; ratings: QuizRatingFilter[] };
+const QUIZ_COUNT_OPTIONS: Array<number | "all"> = [5, 10, 15, 20, "all"];
+const QUIZ_RATING_OPTIONS: Array<{ key: QuizRatingFilter; label: string }> = [...RATING_ORDER.map((r) => ({ key: r as QuizRatingFilter, label: RATING_LABEL[r] })), { key: "none", label: "未評価" }];
+const DEFAULT_QUIZ_SETTINGS: QuizSettings = { count: 10, ratings: QUIZ_RATING_OPTIONS.map((option) => option.key) };
 export type ScheduleItem = { id: string; title: string; date: string; time: string; category: string; done: boolean };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -167,7 +177,7 @@ function InterviewTimer() {
   </div>;
 }
 
-function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; onNavigate: (s: Screen) => void }) {
+function InterviewScreen({ cards, setCards, onNavigate, onBack }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; onNavigate: (s: Screen) => void; onBack: () => void }) {
   const [flipped, setFlipped] = useState<string | null>(null);
   const [show, setShow] = useState(false);
   const [editing, setEditing] = useState<InterviewCard | null>(null);
@@ -369,6 +379,7 @@ function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard
   };
   return <div className="screen">
     <Header title="面接カード" eyebrow="INTERVIEW PREP" onMenu={() => onNavigate("settings")} />
+    <button className="text-button mode-back-link" onClick={onBack}><ArrowLeft size={15} />選択に戻る</button>
     <InterviewTimer />
     <section className="page-lead"><div><p className="eyebrow">FLIP CARDS</p><h2>タップして、答えを確認</h2><p>カードをタップして回答を確認。鉛筆ボタンから内容もいつでも書き換えられます。</p></div><button className="primary-button" onClick={() => setShow((value) => !value)}><Plus size={17} />カード追加</button></section>
     <div className="category-filter" ref={categoryFilterRef} onPointerMove={moveCategoryDrag} onPointerUp={endCategoryDrag} onPointerCancel={endCategoryDrag}><span className="filter-label">カテゴリ</span>{categories.map((item) => item === "すべて"
@@ -399,6 +410,71 @@ function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard
     {managingCategories && <CategoryManager categories={categoryOrder} onRename={renameCategory} onClose={() => setManagingCategories(false)} />}
   </div>;
 }
+
+function QuizSetupScreen({ cards, settings, setSettings, onNavigate, onBack, onStart }: { cards: InterviewCard[]; settings: QuizSettings; setSettings: Dispatch<SetStateAction<QuizSettings>>; onNavigate: (s: Screen) => void; onBack: () => void; onStart: () => void }) {
+  const poolCount = cards.filter((card) => settings.ratings.includes((card.rating ?? "none") as QuizRatingFilter)).length;
+  // A rating chip can be turned off, but never the last one — an empty
+  // filter would just mean "no cards ever match", which is never useful.
+  const toggleRating = (key: QuizRatingFilter) => setSettings((current) => {
+    const has = current.ratings.includes(key);
+    if (has && current.ratings.length === 1) { toast.error("評価は最低ひとつ選んでください"); return current; }
+    return { ...current, ratings: has ? current.ratings.filter((r) => r !== key) : [...current.ratings, key] };
+  });
+  return <div className="screen">
+    <Header title="問題の設定" eyebrow="QUIZ SETUP" onMenu={() => onNavigate("settings")} />
+    <button className="text-button mode-back-link" onClick={onBack}><ArrowLeft size={15} />選択に戻る</button>
+    <section className="page-lead"><div><p className="eyebrow">BEFORE YOU START</p><h2>出題の設定を選ぶ</h2><p>ここで選んだ設定は、次に開いたときも引き継がれます。</p></div></section>
+    <div className="settings-card">
+      <div className="settings-icon"><Target size={20} /></div>
+      <div>
+        <h3>問題数</h3>
+        <p>選んだ枚数を、ランダムな順番で1問ずつ出題します。</p>
+        <div className="chip-row">{QUIZ_COUNT_OPTIONS.map((option) => <button key={option} className={`chip ${settings.count === option ? "selected" : ""}`} onClick={() => setSettings((current) => ({ ...current, count: option }))}>{option === "all" ? "すべて" : `${option}問`}</button>)}</div>
+      </div>
+    </div>
+    <div className="settings-card">
+      <div className="settings-icon orange"><Star size={20} /></div>
+      <div>
+        <h3>出題する評価</h3>
+        <p>選んだ評価が付いたカードだけが出題対象になります。</p>
+        <div className="chip-row">{QUIZ_RATING_OPTIONS.map(({ key, label }) => <button key={key} className={`chip ${settings.ratings.includes(key) ? "selected" : ""}`} onClick={() => toggleRating(key)}>{label}</button>)}</div>
+      </div>
+    </div>
+    <p className={`quiz-pool-hint ${poolCount ? "" : "warn"}`}>{poolCount ? `対象カード：${poolCount}枚` : "対象のカードがありません。評価の選択を見直してください。"}</p>
+    <button className="primary-button quiz-start-button" disabled={!poolCount} onClick={onStart}><Play size={16} fill="currentColor" />開始する</button>
+  </div>;
+}
+
+function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNavigate, onBack }: { deck: InterviewCard[]; index: number; flipped: boolean; onFlip: () => void; onPrev: () => void; onNext: () => void; onNavigate: (s: Screen) => void; onBack: () => void }) {
+  const card = deck[index];
+  if (!card) return null;
+  const isLast = index === deck.length - 1;
+  return <div className="screen quiz-screen">
+    <Header title="出題モード" eyebrow="QUIZ MODE" onMenu={() => onNavigate("settings")} />
+    <button className="text-button mode-back-link" onClick={onBack}><ArrowLeft size={15} />選択に戻る</button>
+    {/* Sticky, top-left — mirrors InterviewTimer's top-right pin so the
+        current position is always visible without scrolling back up. */}
+    <div className="quiz-progress-bar"><span className="quiz-progress-pill">{index + 1} / {deck.length}</span></div>
+    {/* Unlike the grid's flip tiles, this isn't a fixed-size 3D flip — the
+        front/back text just swaps in place — so a long answer grows the
+        card (and the sticky bars stay correctly anchored) instead of
+        overflowing a box sized for the question. */}
+    <div className="quiz-card-stage">
+      <button className={`quiz-flashcard ${flipped ? "flipped" : ""}`} onClick={onFlip}>
+        <span className="card-label">{card.category} · {flipped ? "ANSWER" : "QUESTION"}</span>
+        {flipped ? <p className="quiz-face-text">{card.answer}</p> : <h3 className="quiz-face-text">{card.question}</h3>}
+        <span className="flip-hint">{flipped ? <>もう一度タップで質問へ <RefreshCw size={15} /></> : <>タップして答えを見る <ChevronRight size={15} /></>}</span>
+      </button>
+    </div>
+    {/* Sticky to the bottom corners so "次へ/前へ" are always in thumb reach
+        without scrolling, even on a long answer. */}
+    <div className="quiz-nav-row">
+      <button className="secondary-button" disabled={index === 0} onClick={onPrev}><ChevronLeft size={16} />前のカードへ</button>
+      <button className="primary-button" onClick={onNext}>{isLast ? "終了する" : <>次のカードへ<ChevronRight size={16} /></>}</button>
+    </div>
+  </div>;
+}
+
 function ScheduleScreen({ schedule, setSchedule, onNavigate }: { schedule: ScheduleItem[]; setSchedule: Dispatch<SetStateAction<ScheduleItem[]>>; onNavigate: (s: Screen) => void }) { const [show, setShow] = useState(false); const [draft, setDraft] = useState({ title: "", date: today, time: "19:00", category: "その他" }); const add = () => { if (!draft.title) return toast.error("予定名を入力してください"); setSchedule((c) => [...c, { ...draft, id: `task-${Date.now()}`, done: false }].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))); setDraft({ title: "", date: today, time: "19:00", category: "その他" }); setShow(false); toast.success("予定を追加しました"); }; return <div className="screen"><Header title="就活スケジュール" eyebrow="YOUR TIMELINE" onMenu={() => onNavigate("settings")} /><section className="schedule-hero"><div><p className="eyebrow light">KEEP MOVING</p><h2>締切から逆算して、<br />今日やることを決める。</h2></div><CalendarDays size={48} /></section><div className="section-heading"><div><p className="eyebrow">TIMELINE</p><h2>やることリスト</h2></div><button className="primary-button" onClick={() => setShow((v) => !v)}><Plus size={17} />予定追加</button></div>{show && <div className="inline-form schedule-form"><div className="form-grid"><label className="wide">予定名<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="例：一次面接の準備" /></label><label>日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label><label>時間<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label><label className="wide">カテゴリ<input value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} /></label></div><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}<div className="timeline">{schedule.map((item) => <div className={`timeline-item ${item.done ? "done" : ""}`} key={item.id}><button className="check-circle" onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main"><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><p>{item.category}</p></div><button className="delete-plain" onClick={() => setSchedule((c) => c.filter((x) => x.id !== item.id))}><Trash2 size={16} /></button></div>)}</div></div>; }
 
 function SettingsScreen({ onNavigate, onUpdateApp }: { onNavigate: (s: Screen) => void; onUpdateApp: () => void }) {
@@ -410,6 +486,64 @@ function SettingsScreen({ onNavigate, onUpdateApp }: { onNavigate: (s: Screen) =
   const restore = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const isZip = file.name.toLowerCase().endsWith(".zip"); const reader = new FileReader(); reader.onload = () => { try { const bytes = isZip ? new Uint8Array(reader.result as ArrayBuffer) : strToU8(String(reader.result)); const data = parseBackupBytes(bytes, file.name) as CloudPayload; ["companies", "cards", "schedule"].forEach((key) => { const value = data[key as keyof CloudPayload]; if (Array.isArray(value)) localStorage.setItem(`cc_${key}`, JSON.stringify(value)); }); setStatus("バックアップを復元しました。画面を再読み込みします"); setTimeout(() => location.reload(), 700); } catch { setStatus("バックアップを読み込めませんでした。Career CompassのJSONまたはZIPを選択してください"); } }; if (isZip) reader.readAsArrayBuffer(file); else reader.readAsText(file); e.target.value = ""; };
   return <div className="screen"><Header title="設定" eyebrow="PREFERENCES & DATA" onMenu={() => onNavigate("home")} /><section className="page-lead"><div><p className="eyebrow">YOUR SPACE</p><h2>安心して、積み上げる</h2><p>アプリの更新でデータが消えないように、この端末に自動保存しています。</p></div><Settings size={42} /></section><section className="settings-card"><div className="settings-icon"><FileDown size={20} /></div><div><h3>就活データのバックアップ</h3><p>企業・面接カード・予定をJSONまたはZIPで保存できます。他の端末に移すときは、こちらのZIPを復元してください。</p><div className="settings-actions"><button className="secondary-button" onClick={backupZip}><FileDown size={16} />ZIPで保存</button><button className="secondary-button" onClick={backup}>JSONで保存</button><label className="secondary-button"><FileUp size={16} />JSON / ZIP復元<input type="file" accept="application/json,.json,application/zip,.zip" onChange={restore} hidden /></label></div>{status && <small className="status-message">{status}</small>}</div></section><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>端末に自動保存中</h3><p>企業・面接カード・予定は、このブラウザのローカル領域に自動保存されます。別の端末で使うときは上のバックアップ機能でデータを移してください。</p></div></section><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>PWAを最新バージョンに更新</h3><p>設定画面からいつでも新しいアプリ本体を確認できます。更新後は自動的に再読み込みします。</p><button className="secondary-button" onClick={onUpdateApp}><RefreshCw size={16} />今すぐ更新を確認</button></div></section><button className="outline-wide" onClick={() => onNavigate("home")}><HomeIcon size={17} />ホームに戻る</button></div>;
 }
+// Sits in front of the card screen: pick "面接カード" to manage cards as
+// before, or "問題" to practice one card at a time in a random order. Which
+// of the three sub-screens is showing lives only here, not in the app-wide
+// Screen type, so switching tabs and coming back always starts at this menu.
+function InterviewHub({ cards, setCards, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; onNavigate: (s: Screen) => void }) {
+  const [subScreen, setSubScreen] = useState<"menu" | "cards" | "quiz-setup" | "quiz-play">("menu");
+  const [quizSettings, setQuizSettings] = usePersisted<QuizSettings>("cc_quiz_settings", DEFAULT_QUIZ_SETTINGS);
+  const [quizDeck, setQuizDeck] = useState<InterviewCard[]>([]);
+  const [quizIndex, setQuizIndex] = useState(0);
+  const [quizFlipped, setQuizFlipped] = useState(false);
+  const backToMenu = () => setSubScreen("menu");
+
+  const startQuiz = () => {
+    const pool = cards.filter((card) => quizSettings.ratings.includes((card.rating ?? "none") as QuizRatingFilter));
+    if (!pool.length) return toast.error("対象のカードがありません。設定を見直してください");
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    const count = quizSettings.count === "all" ? shuffled.length : Math.min(quizSettings.count, shuffled.length);
+    setQuizDeck(shuffled.slice(0, count));
+    setQuizIndex(0);
+    setQuizFlipped(false);
+    setSubScreen("quiz-play");
+  };
+  const quizNext = () => {
+    if (quizIndex >= quizDeck.length - 1) {
+      toast.success("全問終了しました。お疲れ様でした！");
+      setSubScreen("menu");
+      return;
+    }
+    setQuizFlipped(false);
+    setQuizIndex((i) => i + 1);
+  };
+  const quizPrev = () => {
+    setQuizFlipped(false);
+    setQuizIndex((i) => Math.max(0, i - 1));
+  };
+
+  if (subScreen === "cards") return <InterviewScreen cards={cards} setCards={setCards} onNavigate={onNavigate} onBack={backToMenu} />;
+  if (subScreen === "quiz-setup") return <QuizSetupScreen cards={cards} settings={quizSettings} setSettings={setQuizSettings} onNavigate={onNavigate} onBack={backToMenu} onStart={startQuiz} />;
+  if (subScreen === "quiz-play") return <QuizPlayScreen deck={quizDeck} index={quizIndex} flipped={quizFlipped} onFlip={() => setQuizFlipped((f) => !f)} onPrev={quizPrev} onNext={quizNext} onNavigate={onNavigate} onBack={backToMenu} />;
+
+  return <div className="screen">
+    <Header title="面接準備" eyebrow="INTERVIEW PREP" onMenu={() => onNavigate("settings")} />
+    <section className="page-lead"><div><p className="eyebrow">CHOOSE MODE</p><h2>どちらで練習しますか？</h2><p>カードを管理する「面接カード」か、1問ずつランダムに出す「問題」を選べます。</p></div></section>
+    <div className="mode-choice-grid">
+      <button className="mode-choice-card" onClick={() => setSubScreen("cards")}>
+        <div className="mode-choice-icon"><BookOpen size={22} /></div>
+        <div><h3>面接カード</h3><p>カードの作成・編集・並び替えをする</p></div>
+        <ChevronRight size={18} />
+      </button>
+      <button className="mode-choice-card" onClick={() => setSubScreen("quiz-setup")}>
+        <div className="mode-choice-icon orange"><Sparkles size={22} /></div>
+        <div><h3>問題</h3><p>1問ずつランダムに出題して練習する</p></div>
+        <ChevronRight size={18} />
+      </button>
+    </div>
+  </div>;
+}
+
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("home");
   const [companies, setCompanies] = usePersisted<Company[]>("cc_companies", starterCompanies);
@@ -471,5 +605,5 @@ export default function Home() {
     }).catch(() => toast.error("更新の確認に失敗しました。通信状態を確認してください"));
   };
 
-  return <div className="app-shell"><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} onNavigate={setScreen} />}{screen === "interview" && <InterviewScreen cards={cards} setCards={setCards} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
+  return <div className="app-shell"><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} onNavigate={setScreen} />}{screen === "interview" && <InterviewHub cards={cards} setCards={setCards} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
 }

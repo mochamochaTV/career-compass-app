@@ -61,6 +61,21 @@ function CompanyEditor({ company, onClose, onSave, onDelete }: { company: Compan
 // `value` whenever the surrounding form is reset or points at a new card
 // (React only reads useState's initial value once per mount, so without
 // this the picker could get stuck showing the wrong mode after a save).
+// A textarea that grows to fit its whole value instead of scrolling inside
+// a fixed-height box. The surrounding modal/page already scrolls, so a long
+// interview answer becomes readable by scrolling the page once, instead of
+// hunting for it through a cramped 3-line window inside the field itself.
+function AutoGrowTextarea({ value, className, ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return <textarea ref={ref} value={value} className={`autogrow ${className ?? ""}`.trim()} {...rest} />;
+}
+
 function CategoryPicker({ value, categories, onChange, resetKey }: { value: string; categories: string[]; onChange: (value: string) => void; resetKey: string | number }) {
   const [mode, setMode] = useState<"select" | "new">(value && !categories.includes(value) ? "new" : "select");
   useEffect(() => { setMode(value && !categories.includes(value) ? "new" : "select"); }, [resetKey]);
@@ -305,6 +320,10 @@ function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard
     <section className="page-lead"><div><p className="eyebrow">FLIP CARDS</p><h2>タップして、答えを確認</h2><p>カードをタップして回答を確認。鉛筆ボタンから内容もいつでも書き換えられます。</p></div><button className="primary-button" onClick={() => setShow((value) => !value)}><Plus size={17} />カード追加</button></section>
     <div className="category-filter"><span className="filter-label">カテゴリ</span>{categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}<small>{item === "すべて" ? cards.length : cards.filter((card) => card.category === item).length}</small></button>)}<button className="icon-button category-manage-button" aria-label="カテゴリを編集" onClick={() => setManagingCategories(true)}><Settings size={15} /></button></div>
     <div className="card-filter"><span>{visibleCards.length} cards</span><button className="text-button" onClick={() => setOrderingCards(true)}><GripVertical size={14} />並び替え</button><span className="hint"><RefreshCw size={14} />表と裏をタップで切替</span></div>
+    {/* Rendered right above the card list (not below it) so opening the form
+        with the "カード追加" button up top never requires scrolling past
+        every existing card just to start typing. */}
+    {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<CategoryPicker value={draft.category} categories={categoryOrder} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label><label>質問<AutoGrowTextarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<AutoGrowTextarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
     <div className="flashcard-grid">{visibleCards.map((card) => <div key={card.id} className="flashcard-item">
       <div className={`flashcard-wrap ${flipped === card.id ? "flipped" : ""}`}>
         <button className={`flashcard ${flipped === card.id ? "flipped" : ""}`} onClick={() => setFlipped(flipped === card.id ? null : card.id)}><div className="flash-front"><span className="card-label">{card.category} · QUESTION</span><h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category} · ANSWER</span><p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
@@ -318,8 +337,7 @@ function InterviewScreen({ cards, setCards, onNavigate }: { cards: InterviewCard
       </div>
     </div>)}</div>
     {!visibleCards.length && <div className="empty-state large"><BookOpen size={24} />このカテゴリにはカードがありません。</div>}
-    {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<CategoryPicker value={draft.category} categories={categoryOrder} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label><label>質問<textarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<textarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
-    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>面接カードを編集</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid"><label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label><label className="wide">質問<textarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<textarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { setCards((current) => current.filter((card) => card.id !== editing.id)); setEditing(null); toast.success("面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
+    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>面接カードを編集</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid"><label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label><label className="wide">質問<AutoGrowTextarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<AutoGrowTextarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { setCards((current) => current.filter((card) => card.id !== editing.id)); setEditing(null); toast.success("面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
     {managingCategories && <CategoryManager categories={categoryOrder} onReorder={setCategoryOrder} onRename={renameCategory} onClose={() => setManagingCategories(false)} />}
     {orderingCards && <CardOrderManager cards={cards} visibleIds={visibleCards.map((card) => card.id)} onReorder={setCards} onClose={() => setOrderingCards(false)} />}
   </div>;

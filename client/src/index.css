@@ -88,8 +88,13 @@ body { background: var(--background); color: var(--foreground); }
 .category-filter button.active { color: #fff; background: #6654d9; border-color: #6654d9; }
 .category-filter small { min-width: 15px; padding: 2px 4px; border-radius: 5px; background: #f0eff6; font-size: 9px; }
 .category-filter button.active small { color: #6654d9; background: #fff; }
-.flashcard-wrap { position: relative; min-height: 210px; }
+.flashcard-wrap { position: relative; min-height: 210px; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .flashcard-wrap .flashcard { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Picked up by a long press (see startCardDrag in InterviewScreen) — lifts
+   the card so dragging it to a new spot in the grid reads as a deliberate
+   pickup, not a layout glitch. */
+.flashcard-wrap.dragging { z-index: 5; }
+.flashcard-wrap.dragging .flashcard { box-shadow: 0 16px 34px #6654d94d; transform: scale(1.03); }
 /* Front/back are stacked with position:absolute so they can overlap for the
    3D flip — but an absolutely positioned box never grows its parent, so a
    long answer just overflowed the fixed-height card and got cut off. Once a
@@ -125,11 +130,6 @@ body { background: var(--background); color: var(--foreground); }
 .category-manager-name { display: inline-flex; align-items: center; gap: 7px; flex: 1; padding: 8px 4px; color: #313147; background: transparent; font-size: 13px; font-weight: 600; text-align: left; }
 .category-manager-name svg { color: #b0b0c2; }
 .category-manager-row input { flex: 1; }
-.card-order-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; padding: 6px 4px; text-align: left; }
-.card-order-name small { color: #9a9aab; font-size: 9px; font-weight: 700; letter-spacing: .08em; }
-.card-order-name span { overflow: hidden; color: #313147; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.category-manager-row .rank-actions { flex: 0 0 auto; }
-.rank-actions button:disabled { opacity: .35; }
 @media (max-width: 760px) { [data-sonner-toaster][data-position="bottom-center"], [data-sonner-toaster][data-position="bottom-right"], [data-sonner-toaster][data-position="bottom-left"] { bottom: 88px !important; } .flashcard-wrap { min-height: 194px; }
   /* iOS locks pinch-zoom here (see the viewport meta's maximum-scale=1), but
      Safari still tries to auto-zoom the page to any focused text field whose

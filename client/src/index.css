@@ -69,7 +69,7 @@ button:active { transform: scale(.98); }
 .add-company-box { display: flex; align-items: center; gap: 8px; margin-top: 17px; padding: 8px 9px 8px 16px; border: 1px solid #ded5ff; border-radius: 15px; background: #f9f8ff; }
 .add-company-box input { min-width: 0; flex: 1; color: #24243a; background: transparent; border: 0; outline: 0; font-size: 13px; }
 .add-company-box select { width: 100px; border: 0; outline: 0; color: #77778c; background: transparent; font-size: 11px; }.notice { display: flex; gap: 8px; margin-top: 13px; padding: 12px 14px; color: #7a739e; background: #f5f3ff; border-radius: 12px; font-size: 11px; line-height: 1.6; }.notice svg { flex: 0 0 auto; color: #7565df; margin-top: 1px; }.notice strong { color: #6654d9; }
-.count-badge { display: inline-grid; place-items: center; min-width: 23px; height: 23px; margin-left: 4px; color: #6654d9; background: #efedff; border-radius: 8px; font-size: 11px; vertical-align: 2px; }.company-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }.company-card { min-width: 0; display: flex; align-items: center; gap: 13px; padding: 17px; color: inherit; background: #fff; border: 1px solid #efeff5; border-radius: 16px; text-align: left; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }.company-card:hover { border-color: #d9d2ff; box-shadow: 0 8px 22px #5042930d; }.company-card.dragging { z-index: 5; border-color: #a99bf4; box-shadow: 0 16px 34px #6654d94d; transform: scale(1.03); }.company-avatar { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; color: #6654d9; background: #efedff; border-radius: 13px; font-size: 18px; font-weight: 800; }.company-avatar.small { width: 34px; height: 34px; border-radius: 11px; font-size: 14px; }.company-card-main { min-width: 0; flex: 1; }.company-title { display: flex; align-items: center; gap: 8px; min-width: 0; }.company-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }.industry-tag { flex: 0 0 auto; padding: 3px 7px; color: #8778d9; background: #f4f2ff; border-radius: 6px; font-size: 9px; }.company-meta { display: flex; flex-wrap: wrap; gap: 6px 15px; margin-top: 8px; color: #9999aa; font-size: 10px; }
+.count-badge { display: inline-grid; place-items: center; min-width: 23px; height: 23px; margin-left: 4px; color: #6654d9; background: #efedff; border-radius: 8px; font-size: 11px; vertical-align: 2px; }.company-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }.company-card { min-width: 0; display: flex; align-items: center; gap: 13px; padding: 17px; color: inherit; background: #fff; border: 1px solid #efeff5; border-radius: 16px; text-align: left; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }.company-card:hover { border-color: #d9d2ff; box-shadow: 0 8px 22px #5042930d; }.company-card.dragging { z-index: 5; border-color: #a99bf4; box-shadow: 0 16px 34px #6654d94d; transform: scale(1.03); }.company-avatar { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; color: #6654d9; background: #efedff; border-radius: 13px; font-size: 18px; font-weight: 800; }.company-avatar.small { width: 34px; height: 34px; border-radius: 11px; font-size: 14px; }.company-card-main { min-width: 0; flex: 1; }.company-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }.company-title strong { min-width: 0; flex: 1 1 auto; font-size: 14px; line-height: 1.4; }.industry-tag { flex: 0 0 auto; padding: 3px 7px; color: #8778d9; background: #f4f2ff; border-radius: 6px; font-size: 9px; }.company-meta { display: flex; flex-wrap: wrap; gap: 6px 15px; margin-top: 8px; color: #9999aa; font-size: 10px; }
 .summary-banner { min-height: 184px; margin-top: 28px; }.summary-banner svg { margin-right: 20px; color: #dcd6ff; }.chip-row { display: flex; gap: 8px; overflow-x: auto; margin: 19px 0 13px; padding-bottom: 3px; }.chip { padding: 8px 14px; color: #858597; background: #fff; border: 1px solid #ecebf3; border-radius: 9px; font-size: 11px; white-space: nowrap; }.chip.selected { color: #fff; background: #6654d9; border-color: #6654d9; }.rank-tabs { display: flex; gap: 7px; margin: 19px 0 13px; }.rank-tabs button { display: flex; align-items: center; gap: 7px; padding: 10px 14px; color: #858597; background: #fff; border: 1px solid #ececf3; border-radius: 10px; font-size: 11px; font-weight: 700; }.rank-tabs button.active { color: #fff; background: #6654d9; border-color: #6654d9; }.yen-icon { font-size: 15px; font-weight: 800; }.ranking-list { overflow: hidden; border: 1px solid #ececf3; border-radius: 18px; background: #fff; }.ranking-row { display: flex; align-items: center; gap: 13px; min-width: 0; padding: 15px 17px; background: #fff; border-bottom: 1px solid #f0f0f5; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }.ranking-row:last-child { border-bottom: 0; }.ranking-row.dragging { position: relative; z-index: 5; border-radius: 12px; box-shadow: 0 16px 34px #6654d94d; transform: scale(1.02); }.rank-number { width: 22px; flex: 0 0 auto; color: #9e9eae; font-size: 16px; font-weight: 800; text-align: center; }.rank-1 { color: #f0a644; }.rank-2 { color: #9ea2b2; }.rank-3 { color: #bb8563; }.ranking-info { min-width: 150px; flex: 1; padding: 0; color: inherit; background: transparent; text-align: left; }.ranking-info strong, .ranking-info span { display: block; }.ranking-info strong { font-size: 14px; }.ranking-info span { margin-top: 4px; color: #9999aa; font-size: 10px; }.ranking-value { width: 105px; text-align: right; }.ranking-value small, .ranking-value strong { display: block; }.ranking-value small { color: #aaaaba; font-size: 9px; }.ranking-value strong { margin-top: 4px; color: #6654d9; font-size: 12px; }
 .page-lead { display: flex; justify-content: space-between; gap: 22px; align-items: flex-start; padding: 0 0 22px; }.page-lead h2 { margin: 6px 0 8px; font-size: 25px; letter-spacing: -.06em; }.page-lead p:not(.eyebrow) { margin: 0; color: #9191a1; font-size: 12px; line-height: 1.7; }.flashcard-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }.flashcard { position: relative; min-height: 210px; padding: 0; color: #fff; background: transparent; perspective: 1000px; text-align: left; }.flash-front, .flash-back { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 25px; border-radius: 19px; backface-visibility: hidden; transition: transform .35s cubic-bezier(.23,1,.32,1); }
 /* Card color theming (see CardColorPicker): the palette lives as custom
@@ -139,7 +139,7 @@ textarea.autogrow { overflow: hidden; resize: none; }
    mobile override below lifts it clear of the fixed bottom nav. */
 .quiz-nav-row { position: sticky; bottom: 20px; z-index: 20; display: flex; justify-content: space-between; gap: 10px; }
 .bottom-nav { display: none; }
-@media (max-width: 760px) { .side-rail { display: none; }.main-content { width: 100%; }.screen { min-height: 100vh; padding: 22px 17px 100px; }.topbar { margin-bottom: 24px; align-items: center; }.topbar h1 { font-size: 24px; }.mobile-only { display: grid; }.topbar > .icon-button:last-child { width: 34px; height: 34px; }.hero-card, .summary-banner, .schedule-hero { min-height: 188px; padding: 25px 22px; border-radius: 20px; }.hero-card h2, .summary-banner h2, .schedule-hero h2 { font-size: 25px; }.hero-orbit { width: 92px; height: 92px; }.hero-orbit svg { width: 26px; }.hero-orbit strong { font-size: 17px; }.overview-grid { gap: 8px; }.stat-card { padding: 14px 10px; gap: 3px 5px; }.stat-card strong { font-size: 20px; }.stat-card span { font-size: 9px; white-space: nowrap; }.section-heading { margin-top: 28px; }.company-list, .flashcard-grid { grid-template-columns: 1fr; }.search-box { flex-wrap: wrap; padding: 10px; }.search-box input { flex: 1 1 calc(100% - 40px); }.search-box select { flex: 1; height: 37px; padding-left: 5px; }.search-box .primary-button { flex: 1; }.add-company-box { flex-wrap: wrap; padding: 10px; }.add-company-box input { flex: 1 1 100%; }.add-company-box select { flex: 1; height: 37px; padding-left: 5px; }.add-company-box .primary-button { flex: 1; }.research-intro { padding: 17px; }.research-intro h2 { font-size: 17px; }.summary-banner svg { width: 38px; margin-right: 0; }.rank-tabs { overflow-x: auto; }.rank-tabs button { padding: 10px 11px; white-space: nowrap; }.ranking-row { gap: 8px; padding: 14px 9px; }.ranking-info { min-width: 0; }.ranking-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.ranking-value { width: 74px; }.page-lead { flex-direction: column; }.page-lead .primary-button { align-self: flex-start; }.flashcard { min-height: 194px; }.flash-front, .flash-back { padding: 21px; }.flash-front h3 { font-size: 18px; }.form-grid { grid-template-columns: 1fr; }.form-grid .wide { grid-column: auto; }.modal-backdrop { padding: 10px; }.editor-modal { padding: 18px; }.modal-footer { align-items: flex-end; }.modal-footer > div { flex-wrap: wrap; justify-content: flex-end; }.timeline { padding-left: 0; }.timeline::before { left: 14px; }.timeline-item { gap: 8px; }.timeline-main { padding: 12px; }.timeline-top { display: block; }.timeline-top span { display: block; margin-top: 6px; }.settings-card { padding: 17px; }.bottom-nav { position: fixed; z-index: 10; right: 12px; bottom: 12px; left: 12px; display: grid; grid-template-columns: repeat(5, 1fr); padding: 7px; border: 1px solid #e9e8f1; border-radius: 18px; background: #ffffffeb; box-shadow: 0 12px 32px #24243a1c; backdrop-filter: blur(14px); }.nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 3px; color: #a0a0ae; background: transparent; border-radius: 12px; font-size: 9px; }.nav-item.active { color: #6654d9; background: #f0edff; font-weight: 700; }.quiz-nav-row { bottom: 94px; } }
+@media (max-width: 760px) { .side-rail { display: none; }.main-content { width: 100%; }.screen { min-height: 100vh; padding: 22px 17px 100px; }.topbar { margin-bottom: 24px; align-items: center; }.topbar h1 { font-size: 24px; }.mobile-only { display: grid; }.topbar > .icon-button:last-child { width: 34px; height: 34px; }.hero-card, .summary-banner, .schedule-hero { min-height: 188px; padding: 25px 22px; border-radius: 20px; }.hero-card h2, .summary-banner h2, .schedule-hero h2 { font-size: 25px; }.hero-orbit { width: 92px; height: 92px; }.hero-orbit svg { width: 26px; }.hero-orbit strong { font-size: 17px; }.overview-grid { gap: 8px; }.stat-card { padding: 14px 10px; gap: 3px 5px; }.stat-card strong { font-size: 20px; }.stat-card span { font-size: 9px; white-space: nowrap; }.section-heading { margin-top: 28px; }.company-list, .flashcard-grid { grid-template-columns: 1fr; }.search-box { flex-wrap: wrap; padding: 10px; }.search-box input { flex: 1 1 calc(100% - 40px); }.search-box select { flex: 1; height: 37px; padding-left: 5px; }.search-box .primary-button { flex: 1; }.add-company-box { flex-wrap: wrap; padding: 10px; }.add-company-box input { flex: 1 1 100%; }.add-company-box select { flex: 1; height: 37px; padding-left: 5px; }.add-company-box .primary-button { flex: 1; }.research-intro { padding: 17px; }.research-intro h2 { font-size: 17px; }.summary-banner svg { width: 38px; margin-right: 0; }.rank-tabs { overflow-x: auto; }.rank-tabs button { padding: 10px 11px; white-space: nowrap; }.ranking-row { gap: 8px; padding: 14px 9px; }.ranking-info { min-width: 0; }.ranking-value { width: 74px; }.page-lead { flex-direction: column; }.page-lead .primary-button { align-self: flex-start; }.flashcard { min-height: 194px; }.flash-front, .flash-back { padding: 21px; }.flash-front h3 { font-size: 18px; }.form-grid { grid-template-columns: 1fr; }.form-grid .wide { grid-column: auto; }.modal-backdrop { padding: 10px; }.editor-modal { padding: 18px; }.modal-footer { align-items: flex-end; }.modal-footer > div { flex-wrap: wrap; justify-content: flex-end; }.timeline { padding-left: 0; }.timeline::before { left: 14px; }.timeline-item { gap: 8px; }.timeline-main { padding: 12px; }.timeline-top { display: block; }.timeline-top span { display: block; margin-top: 6px; }.settings-card { padding: 17px; }.bottom-nav { position: fixed; z-index: 10; right: 12px; bottom: 12px; left: 12px; display: grid; grid-template-columns: repeat(5, 1fr); padding: 7px; border: 1px solid #e9e8f1; border-radius: 18px; background: #ffffffeb; box-shadow: 0 12px 32px #24243a1c; backdrop-filter: blur(14px); }.nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 3px; color: #a0a0ae; background: transparent; border-radius: 12px; font-size: 9px; }.nav-item.active { color: #6654d9; background: #f0edff; font-weight: 700; }.quiz-nav-row { bottom: 94px; } }
 @media (min-width: 761px) { .main-content { overflow-y: auto; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 
@@ -206,16 +206,31 @@ body { background: var(--background); color: var(--foreground); }
 .card-order-button:hover { color: #fff; background: #ffffff42; }
 .card-order-button:disabled { color: #ffffff5c; background: #ffffff14; cursor: default; }
 .flashcard-item { display: flex; flex-direction: column; gap: 8px; }
-.flashcard-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; border: 1px solid #ececf3; border-radius: 12px; background: #fff; }
-.star-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; color: #c7c5d6; background: #f7f6fb; border-radius: 9px; }
+/* Two rows instead of one packed line: toggles + child-thread button on top,
+   the 優/良/可/不可 self-rating pulled onto its own row below (see
+   .footer-actions / .flashcard-footer > .rating-group) so neither has to be
+   squeezed for space on a narrow phone screen. */
+.flashcard-footer { display: flex; flex-direction: column; gap: 7px; padding: 7px 8px; border: 1px solid #ececf3; border-radius: 12px; background: #fff; }
+.footer-actions { display: flex; align-items: center; gap: 8px; }
+/* Star (重要) and check (対策済み) sit right next to each other and used to
+   be an identical shade of gray at rest, distinguished only by their tiny
+   icon glyph — a warm vs. cool tint even before either is toggled on
+   (echoing each one's own "active" hue) makes the pair easier to tell apart
+   at a glance. */
+.star-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; color: #d1b992; background: #f7f6fb; border-radius: 9px; }
 .star-toggle.active { color: #f0a644; background: #fff3e0; }
 /* Sits right next to the star (重要にする) but marks a separate "prepared /
    reviewed" state, so the two can be toggled independently of each other
    and of the 優/良/可/不可 self-rating. */
-.check-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; color: #c7c5d6; background: #f7f6fb; border-radius: 9px; }
+.check-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; color: #a0c4ba; background: #f7f6fb; border-radius: 9px; }
 .check-toggle.active { color: #4caa8e; background: #e8f7f1; }
 .check-toggle.small { width: 24px; height: 24px; }
 .rating-group { display: flex; gap: 4px; }
+/* Only the top-level card footer's rating row gets the full-width, evenly
+   spaced treatment — it now has an entire row to itself. The child-card
+   footer's smaller .rating-group.small stays as a plain compact row; those
+   cards are already less cluttered and don't need the extra breathing room. */
+.flashcard-footer > .rating-group { justify-content: space-between; }
 /* Color swatches for CardColorPicker (see the add/edit card forms) — a
    ring rather than a color change on selection, plus a checkmark inside the
    chosen swatch, so the selected color is still obvious without relying on
@@ -305,8 +320,17 @@ body { background: var(--background); color: var(--foreground); }
 }
 
 /* Company selection-stage tag on the "調べる" list cards, and the "進捗"
-   pipeline board grouping companies by stage (ResearchScreen). */
-.stage-tag { flex: 0 0 auto; padding: 3px 7px; color: #4caa8e; background: #e8f7f1; border-radius: 6px; font-size: 9px; }
+   pipeline board grouping companies by stage (ResearchScreen). Color-coded
+   by STAGE_TONE (see Home.tsx) into five broad tones — not one hue per
+   stage, which would be too many near-identical colors to actually help —
+   so the list can be scanned for "what needs attention" without reading
+   every tag. */
+.stage-tag { flex: 0 0 auto; padding: 3px 7px; border-radius: 6px; font-size: 9px; font-weight: 700; }
+.stage-tag-neutral { color: #77778c; background: #ececf1; }
+.stage-tag-info { color: #3f7fd1; background: #e8f1ff; }
+.stage-tag-progress { color: #c97a34; background: #fff2e6; }
+.stage-tag-success { color: #4caa8e; background: #e8f7f1; }
+.stage-tag-danger { color: #c25454; background: #fbe8e8; }
 .stage-board { display: grid; gap: 14px; margin-top: 18px; }
 .stage-column { padding: 15px; border: 1px solid #ececf3; border-radius: 16px; background: #fff; }
 .stage-column-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
@@ -388,9 +412,12 @@ body { background: var(--background); color: var(--foreground); }
 .attention-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px 4px; color: #b8863a; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
 .attention-row { display: flex; align-items: center; gap: 10px; padding: 10px; color: inherit; background: transparent; border-radius: 12px; text-align: left; }
 .attention-row:hover { background: #fff3dc; }
-.attention-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; }
-.attention-dot.due { background: #e0a53e; }
-.attention-dot.stalled { background: #d16464; }
+/* An icon (not just a colored dot) per attention row, so the reason
+   something is flagged doesn't rely on color alone — a clock for "coming up
+   soon", a pause for "stopped moving" (see HomeScreen). */
+.attention-icon { flex: 0 0 auto; }
+.attention-icon.due { color: #e0a53e; }
+.attention-icon.stalled { color: #d16464; }
 .attention-content { min-width: 0; flex: 1; }
 .attention-content strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .attention-content small { display: block; margin-top: 3px; color: #9c8a5c; font-size: 10px; }
@@ -457,7 +484,7 @@ body { background: var(--background); color: var(--foreground); }
 .dark .danger-button { color: #ff9c9c; background: #442833; }
 .dark .chip, .dark .rank-tabs button, .dark .category-filter button, .dark .segmented-tabs,
 .dark .segmented-tabs button, .dark .mode-choice-icon, .dark .settings-icon, .dark .child-toggle,
-.dark .star-toggle, .dark .check-toggle, .dark .rating-group button, .dark .stage-tag, .dark .industry-tag,
+.dark .rating-group button, .dark .industry-tag,
 .dark .count-badge, .dark .filter-label-button, .dark .company-avatar, .dark .child-add-button,
 .dark .timer-reset, .dark .check-circle {
   color: #b6aedd; background: #332f57; border-color: #3a3660;
@@ -466,6 +493,17 @@ body { background: var(--background); color: var(--foreground); }
 .dark .segmented-tabs button.active, .dark .star-toggle.active, .dark .child-toggle.active {
   color: #fff; background: #6654d9; border-color: #6654d9;
 }
+.dark .star-toggle { color: #cdb98a; background: #332f57; border-color: #3a3660; }
+.dark .check-toggle { color: #8fc2b0; background: #332f57; border-color: #3a3660; }
+/* Stage tags (see the light-mode block above) get their own dark pairing per
+   tone instead of the flat lavender every other neutral pill uses — reusing
+   hue pairs already shipped elsewhere in dark mode (danger-button, the
+   settings icon tints) rather than inventing new, unvetted colors. */
+.dark .stage-tag-neutral { color: #c2c2d1; background: #3a3a46; }
+.dark .stage-tag-info { color: #8fb8f2; background: #1d3352; }
+.dark .stage-tag-progress { color: #ffb27e; background: #3d2b1c; }
+.dark .stage-tag-success { color: #7fe0be; background: #1c3a30; }
+.dark .stage-tag-danger { color: #ff9c9c; background: #442833; }
 .dark .check-toggle.active { color: #7fe0be; background: #1c3a30; }
 .dark .filter-label-button { background: transparent; border: 0; }
 .dark .settings-icon.green { color: #7fe0be; background: #1c3a30; }

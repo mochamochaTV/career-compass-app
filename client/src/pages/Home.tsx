@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { strToU8 } from "fflate";
 import {
   AlertCircle, ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Mic, Moon, Pause, Pencil, Play, Plus,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Mic, Moon, Pause, Pencil, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,6 +20,15 @@ type RankMode = "interest" | "salary" | "benefits";
 export const COMPANY_STAGES = ["未応募", "エントリー", "ES提出", "一次面接", "二次面接", "最終面接", "内定", "不合格", "辞退"] as const;
 export type CompanyStage = typeof COMPANY_STAGES[number];
 export function stageOf(company: Company): CompanyStage { return company.stage ?? "未応募"; }
+// Color-codes the stage tag on each company card so the list reads at a
+// glance without having to read every label — grouped into five broad tones
+// rather than one hue per stage (nine near-identical colors would be no
+// easier to scan than plain text).
+export const STAGE_TONE: Record<CompanyStage, "neutral" | "info" | "progress" | "success" | "danger"> = {
+  "未応募": "neutral", "エントリー": "info", "ES提出": "info",
+  "一次面接": "progress", "二次面接": "progress", "最終面接": "progress",
+  "内定": "success", "不合格": "danger", "辞退": "neutral",
+};
 // A single dated journal entry — "面接後の振り返りメモ" — free-form notes the
 // person leaves for themselves after an interview or a stage change.
 export type InterviewLogEntry = { id: string; date: string; note: string };
@@ -127,8 +136,11 @@ function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[];
   return <div className="screen home-screen"><Header title="おかえりなさい" eyebrow="CAREER COMPASS" onMenu={() => onNavigate("settings")} /><section className="hero-card"><div><p className="eyebrow light">TODAY'S FOCUS</p><h2>次の一歩を、<br /><em>今日のうちに。</em></h2><p className="hero-copy">企業研究と面接準備を、ここでひとつに。</p></div><div className="hero-orbit"><Target size={34} /><span>準備度<br /><strong>{Math.min(100, companies.length * 12 + 34)}%</strong></span></div></section>
     {hasAttention && <section className="attention-card">
       <div className="attention-header"><AlertCircle size={15} /><span>注目</span></div>
-      {upcoming.map((task) => <button className="attention-row" key={task.id} onClick={() => onNavigate("schedule")}><span className="attention-dot due" /><span className="attention-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={15} /></button>)}
-      {stalledCompanies.map((c) => <button className="attention-row" key={c.id} onClick={() => onNavigate("research")}><span className="attention-dot stalled" /><span className="attention-content"><strong>{c.name}</strong><small>「{stageOf(c)}」のまま2週間以上動きがありません</small></span><ChevronRight size={15} /></button>)}
+      {/* An icon per row (not just a colored dot) so the reason something is
+          flagged doesn't rely on color alone — a clock for "coming up soon",
+          a pause for "stopped moving". */}
+      {upcoming.map((task) => <button className="attention-row" key={task.id} onClick={() => onNavigate("schedule")}><Clock size={14} className="attention-icon due" /><span className="attention-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={15} /></button>)}
+      {stalledCompanies.map((c) => <button className="attention-row" key={c.id} onClick={() => onNavigate("research")}><Pause size={14} className="attention-icon stalled" /><span className="attention-content"><strong>{c.name}</strong><small>「{stageOf(c)}」のまま2週間以上動きがありません</small></span><ChevronRight size={15} /></button>)}
     </section>}
     <div className="section-heading"><div><p className="eyebrow">OVERVIEW</p><h2>就活の現在地</h2></div><button className="text-button" onClick={() => onNavigate("schedule")}>予定を見る <ChevronRight size={16} /></button></div><section className="overview-grid"><div className="stat-card purple"><BriefcaseBusiness size={19} /><strong>{companies.length}</strong><span>研究中の企業</span></div><div className="stat-card orange"><BookOpen size={19} /><strong>{cards.length}</strong><span>面接カード</span></div><div className="stat-card green"><CalendarDays size={19} /><strong>{pending.length}</strong><span>未完了の予定</span></div></section><div className="section-heading"><div><p className="eyebrow">UP NEXT</p><h2>次にやること</h2></div><button className="icon-button" onClick={() => onNavigate("schedule")}><ChevronRight size={18} /></button></div><section className="task-preview">{pending.length ? pending.map((task) => <button className="task-row" key={task.id} onClick={() => onNavigate("schedule")}><span className="task-dot" /><span className="task-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={17} /></button>) : <div className="empty-state"><Check size={20} />すべて完了。いいペースです。</div>}</section><section className="tip-card"><Lightbulb size={20} /><div><strong>続けるコツ</strong><p>企業を調べたら、志望理由を一文だけ書いておくと面接カードに変わります。</p></div></section></div>;
 }
@@ -190,7 +202,7 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
           className={`company-card ${companyDrag.draggingId === c.id ? "dragging" : ""}`}
           onPointerDown={(event) => companyDrag.start(c.id, event, filtered.map((x) => x.id))}
           onClick={() => { if (companyDrag.justDraggedRef.current) return; setSelected(c); }}
-        ><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className="stage-tag">{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div></div><ChevronRight size={18} /></button>)}
+        ><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className={`stage-tag stage-tag-${STAGE_TONE[stageOf(c)]}`}>{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div></div><ChevronRight size={18} /></button>)}
         {!filtered.length && <div className="empty-state large"><Search size={24} />「{searchQuery}」に一致する企業がありません。</div>}
       </div>
     </> : mode === "progress" ? <>
@@ -514,8 +526,8 @@ function ChildCardView({ card, depth, flipped, setFlipped, toggleImportant, togg
       <button className="icon-button" aria-label={`${card.question}を編集`} onClick={() => setEditing(card)}><Settings size={13} /></button>
     </div>
     <div className="child-card-footer">
-      <button className={`star-toggle small ${card.important ? "active" : ""}`} aria-label={card.important ? "重要を解除" : "重要にする"} onClick={() => toggleImportant(card.id)}><Star size={13} fill={card.important ? "currentColor" : "none"} /></button>
-      <button className={`check-toggle small ${card.checked ? "active" : ""}`} aria-label={card.checked ? "対策済みを解除" : "対策済みにする"} onClick={() => toggleChecked(card.id)}><CheckCircle2 size={13} fill={card.checked ? "currentColor" : "none"} /></button>
+      <button className={`star-toggle small ${card.important ? "active" : ""}`} aria-label={card.important ? "重要を解除" : "重要にする"} title={card.important ? "重要を解除" : "重要にする"} onClick={() => toggleImportant(card.id)}><Star size={13} fill={card.important ? "currentColor" : "none"} /></button>
+      <button className={`check-toggle small ${card.checked ? "active" : ""}`} aria-label={card.checked ? "対策済みを解除" : "対策済みにする"} title={card.checked ? "対策済みを解除" : "対策済みにする"} onClick={() => toggleChecked(card.id)}><CheckCircle2 size={13} fill={card.checked ? "currentColor" : "none"} /></button>
       <button className={`child-toggle small ${isExpanded ? "active" : ""}`} onClick={() => toggleChildren(card.id)}><MessageSquare size={12} />子カード{children.length > 0 && ` (${children.length})`}</button>
       <div className="rating-group small">{RATING_ORDER.map((r) => <button key={r} className={`rating-${r} ${card.rating === r ? "active" : ""}`} onClick={() => setRating(card.id, r)}>{RATING_LABEL[r]}</button>)}</div>
     </div>
@@ -765,10 +777,16 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
       </div>
       {/* Lives outside the flip card, not on either face, so it stays put
           and tappable no matter which side (question/answer) is showing. */}
+      {/* Split into two rows instead of one packed line of seven controls —
+          toggles/child-thread up top, self-rating on its own row below, so
+          neither one is squeezed for space (or for tap-target size) on a
+          narrow phone screen. */}
       <div className="flashcard-footer">
-        <button className={`star-toggle ${card.important ? "active" : ""}`} aria-label={card.important ? "重要を解除" : "重要にする"} onClick={() => toggleImportant(card.id)}><Star size={16} fill={card.important ? "currentColor" : "none"} /></button>
-        <button className={`check-toggle ${card.checked ? "active" : ""}`} aria-label={card.checked ? "対策済みを解除" : "対策済みにする"} onClick={() => toggleChecked(card.id)}><CheckCircle2 size={16} fill={card.checked ? "currentColor" : "none"} /></button>
-        <button className={`child-toggle ${expandedParents.includes(card.id) ? "active" : ""}`} onClick={() => toggleChildren(card.id)}><MessageSquare size={14} />子カード{childrenOf(card.id).length > 0 && ` (${childrenOf(card.id).length})`}</button>
+        <div className="footer-actions">
+          <button className={`star-toggle ${card.important ? "active" : ""}`} aria-label={card.important ? "重要を解除" : "重要にする"} title={card.important ? "重要を解除" : "重要にする"} onClick={() => toggleImportant(card.id)}><Star size={16} fill={card.important ? "currentColor" : "none"} /></button>
+          <button className={`check-toggle ${card.checked ? "active" : ""}`} aria-label={card.checked ? "対策済みを解除" : "対策済みにする"} title={card.checked ? "対策済みを解除" : "対策済みにする"} onClick={() => toggleChecked(card.id)}><CheckCircle2 size={16} fill={card.checked ? "currentColor" : "none"} /></button>
+          <button className={`child-toggle ${expandedParents.includes(card.id) ? "active" : ""}`} onClick={() => toggleChildren(card.id)}><MessageSquare size={14} />子カード{childrenOf(card.id).length > 0 && ` (${childrenOf(card.id).length})`}</button>
+        </div>
         <div className="rating-group">{RATING_ORDER.map((r) => <button key={r} className={`rating-${r} ${card.rating === r ? "active" : ""}`} onClick={() => setRating(card.id, r)}>{RATING_LABEL[r]}</button>)}</div>
       </div>
       {/* Follow-up Q&A for this card — always tucked away here rather than

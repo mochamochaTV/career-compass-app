@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { strToU8 } from "fflate";
 import {
-  ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check,
-  ChevronDown, ChevronLeft, ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Mic, Pause, Pencil, Play, Plus,
-  RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Target, Trash2, Trophy, X,
+  AlertCircle, ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check,
+  ChevronDown, ChevronLeft, ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Mic, Moon, Pause, Pencil, Play, Plus,
+  RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createBackupZip, parseBackupBytes } from "@/lib/backup";
 import { BASE_PATH } from "@/lib/basePath";
+import { useTheme } from "@/contexts/ThemeContext";
 
 type Screen = "home" | "research" | "interview" | "schedule" | "settings";
 type ResearchMode = "research" | "summary" | "progress";
@@ -58,6 +59,14 @@ const QUIZ_RATING_OPTIONS: Array<{ key: QuizRatingFilter; label: string }> = [..
 const DEFAULT_QUIZ_SETTINGS: QuizSettings = { count: 10, ratings: QUIZ_RATING_OPTIONS.map((option) => option.key), weighted: false };
 export type ScheduleItem = { id: string; title: string; date: string; time: string; category: string; done: boolean };
 
+// UI text size, applied app-wide as a CSS zoom on the whole shell (see Home())
+// rather than rewriting every literal px font-size in index.css to a
+// calc()'d variable — the app's type scale is almost entirely fixed px, so a
+// root font-size change alone wouldn't move anything.
+type FontScale = "small" | "standard" | "large";
+const FONT_SCALE_VALUE: Record<FontScale, number> = { small: 0.92, standard: 1, large: 1.14 };
+const FONT_SCALE_LABEL: Record<FontScale, string> = { small: "小", standard: "標準", large: "大" };
+
 const today = new Date().toISOString().slice(0, 10);
 const starterCompanies: Company[] = [
   { id: "company-1", name: "任天堂", industry: "ゲーム", interest: 5, salary: null, benefits: "情報を追加", location: "京都・東京", philosophy: "自分で企業理念を追記", person: "求める人物像を追記", notes: "調べる画面から企業情報を追加できます。", sources: ["https://www.nintendo.co.jp/", "https://www.nintendo.co.jp/jobs/"], updatedAt: today, stage: "エントリー", interviewLogs: [] },
@@ -85,20 +94,57 @@ function Header({ title, eyebrow, onMenu }: { title: string; eyebrow?: string; o
 function Logo() { return <div className="brand-mark"><div className="brand-symbol"><Target size={20} /></div><div><p className="brand-name">Career Compass</p><p className="brand-sub">就活を、迷わず進める。</p></div></div>; }
 function BottomNav({ screen, onChange }: { screen: Screen; onChange: (s: Screen) => void }) { const items: Array<{ id: Screen; label: string; Icon: typeof HomeIcon }> = [{ id: "interview", label: "面接", Icon: BookOpen }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "home", label: "ホーム", Icon: HomeIcon }, { id: "schedule", label: "予定", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }]; return <nav className="bottom-nav">{items.map(({ id, label, Icon }) => <button key={id} className={`nav-item ${screen === id ? "active" : ""}`} onClick={() => onChange(id)}><Icon size={21} /><span>{label}</span></button>)}</nav>; }
 
-function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[]; schedule: ScheduleItem[]; onNavigate: (s: Screen) => void }) { const pending = schedule.filter((x) => !x.done).slice(0, 2); const cards = load<InterviewCard[]>("cc_cards", starterCards); return <div className="screen home-screen"><Header title="おかえりなさい" eyebrow="CAREER COMPASS" onMenu={() => onNavigate("settings")} /><section className="hero-card"><div><p className="eyebrow light">TODAY'S FOCUS</p><h2>次の一歩を、<br /><em>今日のうちに。</em></h2><p className="hero-copy">企業研究と面接準備を、ここでひとつに。</p></div><div className="hero-orbit"><Target size={34} /><span>準備度<br /><strong>{Math.min(100, companies.length * 12 + 34)}%</strong></span></div></section><div className="section-heading"><div><p className="eyebrow">OVERVIEW</p><h2>就活の現在地</h2></div><button className="text-button" onClick={() => onNavigate("schedule")}>予定を見る <ChevronRight size={16} /></button></div><section className="overview-grid"><div className="stat-card purple"><BriefcaseBusiness size={19} /><strong>{companies.length}</strong><span>研究中の企業</span></div><div className="stat-card orange"><BookOpen size={19} /><strong>{cards.length}</strong><span>面接カード</span></div><div className="stat-card green"><CalendarDays size={19} /><strong>{pending.length}</strong><span>未完了の予定</span></div></section><div className="section-heading"><div><p className="eyebrow">UP NEXT</p><h2>次にやること</h2></div><button className="icon-button" onClick={() => onNavigate("schedule")}><ChevronRight size={18} /></button></div><section className="task-preview">{pending.length ? pending.map((task) => <button className="task-row" key={task.id} onClick={() => onNavigate("schedule")}><span className="task-dot" /><span className="task-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={17} /></button>) : <div className="empty-state"><Check size={20} />すべて完了。いいペースです。</div>}</section><section className="tip-card"><Lightbulb size={20} /><div><strong>続けるコツ</strong><p>企業を調べたら、志望理由を一文だけ書いておくと面接カードに変わります。</p></div></section></div>; }
+function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[]; schedule: ScheduleItem[]; onNavigate: (s: Screen) => void }) {
+  const pending = schedule.filter((x) => !x.done).slice(0, 2);
+  const cards = load<InterviewCard[]>("cc_cards", starterCards);
+
+  // "注目" — surfaces what's actually time-sensitive right now instead of
+  // just static totals: schedule items due within 3 days (or already
+  // overdue), and companies mid-process whose entry hasn't been touched in
+  // two weeks — easy to lose track of once there are several running at
+  // once. Companies already at 未応募/内定/不合格/辞退 aren't "in progress"
+  // so staleness there isn't meaningful.
+  const now = Date.now();
+  const soonCutoff = now + 3 * 24 * 60 * 60 * 1000;
+  const upcoming = schedule
+    .filter((x) => !x.done && new Date(`${x.date}T${x.time || "23:59"}`).getTime() <= soonCutoff)
+    .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))
+    .slice(0, 2);
+  const inactiveStages = new Set<CompanyStage>(["未応募", "内定", "不合格", "辞退"]);
+  const staleCutoffMs = 14 * 24 * 60 * 60 * 1000;
+  const stalledCompanies = companies
+    .filter((c) => !inactiveStages.has(stageOf(c)) && now - new Date(c.updatedAt).getTime() > staleCutoffMs)
+    .slice(0, 2);
+  const hasAttention = upcoming.length > 0 || stalledCompanies.length > 0;
+
+  return <div className="screen home-screen"><Header title="おかえりなさい" eyebrow="CAREER COMPASS" onMenu={() => onNavigate("settings")} /><section className="hero-card"><div><p className="eyebrow light">TODAY'S FOCUS</p><h2>次の一歩を、<br /><em>今日のうちに。</em></h2><p className="hero-copy">企業研究と面接準備を、ここでひとつに。</p></div><div className="hero-orbit"><Target size={34} /><span>準備度<br /><strong>{Math.min(100, companies.length * 12 + 34)}%</strong></span></div></section>
+    {hasAttention && <section className="attention-card">
+      <div className="attention-header"><AlertCircle size={15} /><span>注目</span></div>
+      {upcoming.map((task) => <button className="attention-row" key={task.id} onClick={() => onNavigate("schedule")}><span className="attention-dot due" /><span className="attention-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={15} /></button>)}
+      {stalledCompanies.map((c) => <button className="attention-row" key={c.id} onClick={() => onNavigate("research")}><span className="attention-dot stalled" /><span className="attention-content"><strong>{c.name}</strong><small>「{stageOf(c)}」のまま2週間以上動きがありません</small></span><ChevronRight size={15} /></button>)}
+    </section>}
+    <div className="section-heading"><div><p className="eyebrow">OVERVIEW</p><h2>就活の現在地</h2></div><button className="text-button" onClick={() => onNavigate("schedule")}>予定を見る <ChevronRight size={16} /></button></div><section className="overview-grid"><div className="stat-card purple"><BriefcaseBusiness size={19} /><strong>{companies.length}</strong><span>研究中の企業</span></div><div className="stat-card orange"><BookOpen size={19} /><strong>{cards.length}</strong><span>面接カード</span></div><div className="stat-card green"><CalendarDays size={19} /><strong>{pending.length}</strong><span>未完了の予定</span></div></section><div className="section-heading"><div><p className="eyebrow">UP NEXT</p><h2>次にやること</h2></div><button className="icon-button" onClick={() => onNavigate("schedule")}><ChevronRight size={18} /></button></div><section className="task-preview">{pending.length ? pending.map((task) => <button className="task-row" key={task.id} onClick={() => onNavigate("schedule")}><span className="task-dot" /><span className="task-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={17} /></button>) : <div className="empty-state"><Check size={20} />すべて完了。いいペースです。</div>}</section><section className="tip-card"><Lightbulb size={20} /><div><strong>続けるコツ</strong><p>企業を調べたら、志望理由を一文だけ書いておくと面接カードに変わります。</p></div></section></div>;
+}
 
 function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { companies: Company[]; setCompanies: Dispatch<SetStateAction<Company[]>>; cards: InterviewCard[]; onNavigate: (s: Screen) => void }) {
   const [mode, setMode] = useState<ResearchMode>("research");
   const [rank, setRank] = useState<RankMode>("interest");
   const [industry, setIndustry] = useState("すべて");
-  const [query, setQuery] = useState("");
+  // Kept separate from newCompanyName below — one text field used to double
+  // as both "filter the list" and "name the company you're adding", which
+  // read as a single search box but silently did nothing when you typed
+  // into it on the 調べる tab (it only ever filtered the まとめ ranking).
+  // Splitting them means typing here actually narrows what you're looking
+  // at, and typing a new company name never gets mistaken for a filter.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [newCompanyName, setNewCompanyName] = useState("");
   const [newIndustry, setNewIndustry] = useState("ゲーム");
   const [selected, setSelected] = useState<Company | null>(null);
   const industries = ["すべて", ...Array.from(new Set(companies.map((c) => c.industry)))];
-  const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && c.name.toLowerCase().includes(query.toLowerCase()));
+  const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && c.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const sorted = [...filtered].sort((a, b) => rank === "interest" ? b.interest - a.interest : rank === "salary" ? (b.salary ?? -1) - (a.salary ?? -1) : b.benefits.length - a.benefits.length);
 
-  const add = () => { const name = query.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, salary: null, benefits: "調査して追記", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [] }; setCompanies((current) => [...current, company]); setQuery(""); setSelected(company); toast.success(`${name}を追加しました`); };
+  const add = () => { const name = newCompanyName.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, salary: null, benefits: "調査して追記", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [] }; setCompanies((current) => [...current, company]); setNewCompanyName(""); setSelected(company); toast.success(`${name}を追加しました`); };
   const save = (updated: Company) => { setCompanies((current) => current.map((c) => c.id === updated.id ? { ...updated, updatedAt: today } : c)); setSelected({ ...updated, updatedAt: today }); toast.success("企業情報を保存しました"); };
   const updateStage = (id: string, stage: CompanyStage) => setCompanies((current) => current.map((c) => c.id === id ? { ...c, stage, updatedAt: today } : c));
 
@@ -123,16 +169,22 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
     <div className="segmented-tabs research-tabs"><button className={mode === "research" ? "active" : ""} onClick={() => setMode("research")}><Search size={16} />調べる</button><button className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><Trophy size={16} />まとめ</button><button className={mode === "progress" ? "active" : ""} onClick={() => setMode("progress")}><Target size={16} />進捗</button></div>
     {mode === "research" ? <>
       <section className="research-intro"><div className="intro-icon"><Sparkles size={22} /></div><div><p className="eyebrow">RESEARCH DESK</p><h2>企業名から、研究メモを始める</h2><p>公式サイト・採用ページなどの参考URLを残しながら、自分の言葉で情報を整理できます。</p></div></section>
-      <div className="search-box"><Search size={19} /><input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="企業名を入力（例：任天堂）" /><select value={newIndustry} onChange={(e) => setNewIndustry(e.target.value)}><option>ゲーム</option><option>IT・Web</option><option>メーカー</option><option>商社</option><option>その他</option></select><div className="search-actions"><button className="primary-button" onClick={add}><Plus size={17} />追加</button></div></div>
+      <div className="add-company-box">
+        <input value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="新しい企業名を入力（例：任天堂）" />
+        <select value={newIndustry} onChange={(e) => setNewIndustry(e.target.value)}><option>ゲーム</option><option>IT・Web</option><option>メーカー</option><option>商社</option><option>その他</option></select>
+        <button className="primary-button" onClick={add}><Plus size={17} />追加</button>
+      </div>
       <div className="section-heading compact"><div><p className="eyebrow">YOUR LIST</p><h2>追加した企業 <span className="count-badge">{companies.length}</span></h2></div></div>
-      <div className="card-filter"><span>{companies.length} companies</span><span className="hint"><GripVertical size={14} />長押しで並び替え</span></div>
+      <div className="search-box"><Search size={19} /><input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="企業名で絞り込み" />{searchQuery && <button className="icon-button" aria-label="絞り込みをクリア" onClick={() => setSearchQuery("")}><X size={16} /></button>}</div>
+      <div className="card-filter"><span>{searchQuery ? `${filtered.length} / ${companies.length} companies` : `${companies.length} companies`}</span><span className="hint"><GripVertical size={14} />長押しで並び替え</span></div>
       <div className="company-list" ref={companyDrag.containerRef} onPointerMove={(event) => companyDrag.move(event, reorderCompanies)} onPointerUp={companyDrag.end} onPointerCancel={companyDrag.end}>
-        {companies.map((c) => <button
+        {filtered.map((c) => <button
           key={c.id}
           className={`company-card ${companyDrag.draggingId === c.id ? "dragging" : ""}`}
-          onPointerDown={(event) => companyDrag.start(c.id, event, companies.map((x) => x.id))}
+          onPointerDown={(event) => companyDrag.start(c.id, event, filtered.map((x) => x.id))}
           onClick={() => { if (companyDrag.justDraggedRef.current) return; setSelected(c); }}
         ><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className="stage-tag">{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div></div><ChevronRight size={18} /></button>)}
+        {!filtered.length && <div className="empty-state large"><Search size={24} />「{searchQuery}」に一致する企業がありません。</div>}
       </div>
     </> : mode === "progress" ? <>
       <section className="summary-banner"><div><p className="eyebrow light">PIPELINE</p><h2>選考の進み具合を、<br />ひと目で確認する</h2><p>ステージごとに企業をまとめました。プルダウンから今の状況をすぐ更新できます。</p></div><Target size={54} strokeWidth={1.5} /></section>
@@ -169,6 +221,11 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
 }
 function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company: Company; cards: InterviewCard[]; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) {
   const [draft, setDraft] = useState(company);
+  // The modal grew a lot once ステータス, 振り返りメモ and 紐づくカード were
+  // added on top of the original basic-info form — enough that it read as
+  // one long wall of fields. Splitting it into tabs means only one section's
+  // worth of controls is visible at a time.
+  const [tab, setTab] = useState<"basic" | "progress" | "cards">("basic");
   const update = (key: keyof Company, value: string | number | null | string[]) => setDraft((d) => ({ ...d, [key]: value }));
   const [logDraft, setLogDraft] = useState({ date: today, note: "" });
   const logs = draft.interviewLogs ?? [];
@@ -183,22 +240,31 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
   // card's own editor (see InterviewScreen's company picker). Shown here
   // read-only, as a quick "what have I already prepared for them" reminder.
   const linkedCards = cards.filter((card) => card.companyId === company.id && !card.parentId);
-  return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">COMPANY NOTE</p><h2>{draft.name}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div><div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">選考ステータス<div className="chip-row">{COMPANY_STAGES.map((s) => <button type="button" key={s} className={`chip ${stageOf(draft) === s ? "selected" : ""}`} onClick={() => update("stage", s)}>{s}</button>)}</div></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<textarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<textarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<textarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<textarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label></div>
-    <div className="editor-section">
-      <h3>面接後の振り返りメモ</h3>
-      <div className="reflection-log-form"><input type="date" value={logDraft.date} onChange={(event) => setLogDraft((d) => ({ ...d, date: event.target.value }))} /><AutoGrowTextarea value={logDraft.note} onChange={(event) => setLogDraft((d) => ({ ...d, note: event.target.value }))} placeholder="面接で聞かれたこと、手応え、次に活かしたい点など" /><button type="button" className="secondary-button" onClick={addLog}><Plus size={15} />メモを追加</button></div>
-      <div className="reflection-log-list">
-        {logs.map((entry) => <div className="reflection-log-entry" key={entry.id}><div className="reflection-log-main"><small>{entry.date}</small><p>{entry.note}</p></div><button type="button" className="icon-button" aria-label="メモを削除" onClick={() => removeLog(entry.id)}><Trash2 size={14} /></button></div>)}
-        {!logs.length && <p className="child-empty-hint">まだ振り返りメモがありません。面接の後に、気づいたことを残しておきましょう。</p>}
-      </div>
+  return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">COMPANY NOTE</p><h2>{draft.name}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div>
+    <div className="segmented-tabs editor-tabs">
+      <button className={tab === "basic" ? "active" : ""} onClick={() => setTab("basic")}>基本情報</button>
+      <button className={tab === "progress" ? "active" : ""} onClick={() => setTab("progress")}>進捗・メモ{logs.length > 0 && <small>{logs.length}</small>}</button>
+      <button className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>紐づくカード{linkedCards.length > 0 && <small>{linkedCards.length}</small>}</button>
     </div>
-    <div className="editor-section">
+    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<textarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<textarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<textarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<textarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label></div>}
+    {tab === "progress" && <>
+      <div className="form-grid"><label className="wide">選考ステータス<div className="chip-row">{COMPANY_STAGES.map((s) => <button type="button" key={s} className={`chip ${stageOf(draft) === s ? "selected" : ""}`} onClick={() => update("stage", s)}>{s}</button>)}</div></label></div>
+      <div className="editor-section flush">
+        <h3>面接後の振り返りメモ</h3>
+        <div className="reflection-log-form"><input type="date" value={logDraft.date} onChange={(event) => setLogDraft((d) => ({ ...d, date: event.target.value }))} /><AutoGrowTextarea value={logDraft.note} onChange={(event) => setLogDraft((d) => ({ ...d, note: event.target.value }))} placeholder="面接で聞かれたこと、手応え、次に活かしたい点など" /><button type="button" className="secondary-button" onClick={addLog}><Plus size={15} />メモを追加</button></div>
+        <div className="reflection-log-list">
+          {logs.map((entry) => <div className="reflection-log-entry" key={entry.id}><div className="reflection-log-main"><small>{entry.date}</small><p>{entry.note}</p></div><button type="button" className="icon-button" aria-label="メモを削除" onClick={() => removeLog(entry.id)}><Trash2 size={14} /></button></div>)}
+          {!logs.length && <p className="child-empty-hint">まだ振り返りメモがありません。面接の後に、気づいたことを残しておきましょう。</p>}
+        </div>
+      </div>
+    </>}
+    {tab === "cards" && <div className="editor-section flush">
       <h3>紐づいている面接カード</h3>
       <div className="linked-cards-list">
         {linkedCards.map((card) => <div className="linked-card-row" key={card.id}><span className="card-label">{card.category}</span><p>{card.question}</p></div>)}
         {!linkedCards.length && <p className="child-empty-hint">面接カードの編集画面から、この企業向けの質問を紐づけられます。</p>}
       </div>
-    </div>
+    </div>}
     <div className="modal-footer"><button className="danger-button" onClick={onDelete}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>;
 }
 
@@ -891,14 +957,15 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
 
 function ScheduleScreen({ schedule, setSchedule, onNavigate }: { schedule: ScheduleItem[]; setSchedule: Dispatch<SetStateAction<ScheduleItem[]>>; onNavigate: (s: Screen) => void }) { const [show, setShow] = useState(false); const [draft, setDraft] = useState({ title: "", date: today, time: "19:00", category: "その他" }); const add = () => { if (!draft.title) return toast.error("予定名を入力してください"); setSchedule((c) => [...c, { ...draft, id: `task-${Date.now()}`, done: false }].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))); setDraft({ title: "", date: today, time: "19:00", category: "その他" }); setShow(false); toast.success("予定を追加しました"); }; return <div className="screen"><Header title="就活スケジュール" eyebrow="YOUR TIMELINE" onMenu={() => onNavigate("settings")} /><section className="schedule-hero"><div><p className="eyebrow light">KEEP MOVING</p><h2>締切から逆算して、<br />今日やることを決める。</h2></div><CalendarDays size={48} /></section><div className="section-heading"><div><p className="eyebrow">TIMELINE</p><h2>やることリスト</h2></div><button className="primary-button" onClick={() => setShow((v) => !v)}><Plus size={17} />予定追加</button></div>{show && <div className="inline-form schedule-form"><div className="form-grid"><label className="wide">予定名<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="例：一次面接の準備" /></label><label>日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label><label>時間<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label><label className="wide">カテゴリ<input value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} /></label></div><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}<div className="timeline">{schedule.map((item) => <div className={`timeline-item ${item.done ? "done" : ""}`} key={item.id}><button className="check-circle" onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main"><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><p>{item.category}</p></div><button className="delete-plain" onClick={() => setSchedule((c) => c.filter((x) => x.id !== item.id))}><Trash2 size={16} /></button></div>)}</div></div>; }
 
-function SettingsScreen({ onNavigate, onUpdateApp }: { onNavigate: (s: Screen) => void; onUpdateApp: () => void }) {
+function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { onNavigate: (s: Screen) => void; onUpdateApp: () => void; fontScale: FontScale; setFontScale: Dispatch<SetStateAction<FontScale>> }) {
   const [status, setStatus] = useState("");
+  const { theme, toggleTheme } = useTheme();
   const getData = () => ({ companies: load("cc_companies", starterCompanies), cards: load("cc_cards", starterCards), schedule: load("cc_schedule", starterSchedule), exportedAt: new Date().toISOString(), formatVersion: 1 });
   const download = (bytes: Uint8Array, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type })); const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); };
   const backup = () => { download(strToU8(JSON.stringify(getData(), null, 2)), `career-compass-backup-${today}.json`, "application/json"); setStatus("JSONバックアップを書き出しました"); };
   const backupZip = () => { const data = getData(); download(createBackupZip(data), `career-compass-backup-${today}.zip`, "application/zip"); setStatus("ZIPバックアップを書き出しました"); };
   const restore = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const isZip = file.name.toLowerCase().endsWith(".zip"); const reader = new FileReader(); reader.onload = () => { try { const bytes = isZip ? new Uint8Array(reader.result as ArrayBuffer) : strToU8(String(reader.result)); const data = parseBackupBytes(bytes, file.name) as CloudPayload; ["companies", "cards", "schedule"].forEach((key) => { const value = data[key as keyof CloudPayload]; if (Array.isArray(value)) localStorage.setItem(`cc_${key}`, JSON.stringify(value)); }); setStatus("バックアップを復元しました。画面を再読み込みします"); setTimeout(() => location.reload(), 700); } catch { setStatus("バックアップを読み込めませんでした。Career CompassのJSONまたはZIPを選択してください"); } }; if (isZip) reader.readAsArrayBuffer(file); else reader.readAsText(file); e.target.value = ""; };
-  return <div className="screen"><Header title="設定" eyebrow="PREFERENCES & DATA" onMenu={() => onNavigate("home")} /><section className="page-lead"><div><p className="eyebrow">YOUR SPACE</p><h2>安心して、積み上げる</h2><p>アプリの更新でデータが消えないように、この端末に自動保存しています。</p></div><Settings size={42} /></section><section className="settings-card"><div className="settings-icon"><FileDown size={20} /></div><div><h3>就活データのバックアップ</h3><p>企業・面接カード・予定をJSONまたはZIPで保存できます。他の端末に移すときは、こちらのZIPを復元してください。</p><div className="settings-actions"><button className="secondary-button" onClick={backupZip}><FileDown size={16} />ZIPで保存</button><button className="secondary-button" onClick={backup}>JSONで保存</button><label className="secondary-button"><FileUp size={16} />JSON / ZIP復元<input type="file" accept="application/json,.json,application/zip,.zip" onChange={restore} hidden /></label></div>{status && <small className="status-message">{status}</small>}</div></section><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>端末に自動保存中</h3><p>企業・面接カード・予定は、このブラウザのローカル領域に自動保存されます。別の端末で使うときは上のバックアップ機能でデータを移してください。</p></div></section><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>PWAを最新バージョンに更新</h3><p>設定画面からいつでも新しいアプリ本体を確認できます。更新後は自動的に再読み込みします。</p><button className="secondary-button" onClick={onUpdateApp}><RefreshCw size={16} />今すぐ更新を確認</button></div></section><button className="outline-wide" onClick={() => onNavigate("home")}><HomeIcon size={17} />ホームに戻る</button></div>;
+  return <div className="screen"><Header title="設定" eyebrow="PREFERENCES & DATA" onMenu={() => onNavigate("home")} /><section className="page-lead"><div><p className="eyebrow">YOUR SPACE</p><h2>安心して、積み上げる</h2><p>アプリの更新でデータが消えないように、この端末に自動保存しています。</p></div><Settings size={42} /></section><section className="settings-card"><div className="settings-icon purple">{theme === "dark" ? <Moon size={20} /> : <Sun size={20} />}</div><div><h3>表示</h3><p>ダークモードと文字サイズを、この端末向けに調整できます。</p><div className="display-settings-row"><span className="display-settings-label">配色</span><div className="chip-row"><button className={`chip ${theme === "light" ? "selected" : ""}`} onClick={() => theme === "dark" && toggleTheme?.()}><Sun size={13} />ライト</button><button className={`chip ${theme === "dark" ? "selected" : ""}`} onClick={() => theme === "light" && toggleTheme?.()}><Moon size={13} />ダーク</button></div></div><div className="display-settings-row"><span className="display-settings-label">文字サイズ</span><div className="chip-row">{(Object.keys(FONT_SCALE_LABEL) as FontScale[]).map((scale) => <button key={scale} className={`chip ${fontScale === scale ? "selected" : ""}`} onClick={() => setFontScale(scale)}>{FONT_SCALE_LABEL[scale]}</button>)}</div></div></div></section><section className="settings-card"><div className="settings-icon"><FileDown size={20} /></div><div><h3>就活データのバックアップ</h3><p>企業・面接カード・予定をJSONまたはZIPで保存できます。他の端末に移すときは、こちらのZIPを復元してください。</p><div className="settings-actions"><button className="secondary-button" onClick={backupZip}><FileDown size={16} />ZIPで保存</button><button className="secondary-button" onClick={backup}>JSONで保存</button><label className="secondary-button"><FileUp size={16} />JSON / ZIP復元<input type="file" accept="application/json,.json,application/zip,.zip" onChange={restore} hidden /></label></div>{status && <small className="status-message">{status}</small>}</div></section><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>端末に自動保存中</h3><p>企業・面接カード・予定は、このブラウザのローカル領域に自動保存されます。別の端末で使うときは上のバックアップ機能でデータを移してください。</p></div></section><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>PWAを最新バージョンに更新</h3><p>設定画面からいつでも新しいアプリ本体を確認できます。更新後は自動的に再読み込みします。</p><button className="secondary-button" onClick={onUpdateApp}><RefreshCw size={16} />今すぐ更新を確認</button></div></section><button className="outline-wide" onClick={() => onNavigate("home")}><HomeIcon size={17} />ホームに戻る</button></div>;
 }
 // Sits in front of the card screen: pick "面接カード" to manage cards as
 // before, or "問題" to practice one card at a time in a random order. Which
@@ -958,6 +1025,14 @@ function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: Inter
     ...RATING_ORDER.map((r) => ({ key: r as QuizRatingFilter, label: RATING_LABEL[r], count: topLevelCards.filter((c) => c.rating === r).length })),
     { key: "none", label: "未評価", count: topLevelCards.filter((c) => !c.rating).length },
   ];
+  // Same 7 log entries as weeklyCount, just bucketed per calendar day
+  // (today last) instead of collapsed into one total — a day-by-day shape
+  // is much faster to read at a glance than a single number ("did I
+  // actually practice yesterday, or was it all Monday?").
+  const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
+  const last7Days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (6 - i)); return d; });
+  const dailyCounts = last7Days.map((day) => { const start = day.getTime(); const end = start + 24 * 60 * 60 * 1000; return practiceLog.filter((iso) => { const t = new Date(iso).getTime(); return t >= start && t < end; }).length; });
+  const maxDailyCount = Math.max(1, ...dailyCounts);
 
   return <div className="screen">
     <Header title="面接準備" eyebrow="INTERVIEW PREP" onMenu={() => onNavigate("settings")} />
@@ -965,6 +1040,13 @@ function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: Inter
     <section className="practice-stats-card">
       <div className="practice-stats-header"><Trophy size={18} /><div><p className="eyebrow">THIS WEEK</p><h3>週間の練習実績</h3></div></div>
       <div className="practice-stats-count"><strong>{weeklyCount}</strong><span>問を練習しました</span></div>
+      <div className="practice-bar-chart" role="img" aria-label="曜日ごとの練習回数">
+        {last7Days.map((day, i) => { const count = dailyCounts[i]; const isToday = i === last7Days.length - 1; const heightPct = Math.max((count / maxDailyCount) * 100, count > 0 ? 10 : 3); return <div className="practice-bar-col" key={day.toISOString()}>
+          <span className="practice-bar-value">{count > 0 ? count : ""}</span>
+          <div className="practice-bar-track"><div className={`practice-bar-fill ${isToday ? "today" : ""}`} style={{ height: `${heightPct}%` }} /></div>
+          <span className="practice-bar-label">{DAY_LABELS[day.getDay()]}</span>
+        </div>; })}
+      </div>
       <div className="rating-breakdown">{ratingBreakdown.map(({ key, label, count }) => <div className="rating-breakdown-row" key={key}><span className={`rating-dot rating-${key}`} /><span>{label}</span><span className="rating-breakdown-count">{count}</span></div>)}</div>
     </section>
     <div className="mode-choice-grid">
@@ -987,6 +1069,7 @@ export default function Home() {
   const [companies, setCompanies] = usePersisted<Company[]>("cc_companies", starterCompanies);
   const [cards, setCards] = usePersisted<InterviewCard[]>("cc_cards", starterCards);
   const [schedule, setSchedule] = usePersisted<ScheduleItem[]>("cc_schedule", starterSchedule);
+  const [fontScale, setFontScale] = usePersisted<FontScale>("cc_font_scale", "standard");
   const [serviceWorkerRegistration, setServiceWorkerRegistration] = useState<ServiceWorkerRegistration | null>(null);
 
   useEffect(() => {
@@ -1043,5 +1126,5 @@ export default function Home() {
     }).catch(() => toast.error("更新の確認に失敗しました。通信状態を確認してください"));
   };
 
-  return <div className="app-shell"><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} cards={cards} onNavigate={setScreen} />}{screen === "interview" && <InterviewHub cards={cards} setCards={setCards} companies={companies} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
+  return <div className="app-shell" style={{ zoom: FONT_SCALE_VALUE[fontScale] } as React.CSSProperties}><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} cards={cards} onNavigate={setScreen} />}{screen === "interview" && <InterviewHub cards={cards} setCards={setCards} companies={companies} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} fontScale={fontScale} setFontScale={setFontScale} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
 }

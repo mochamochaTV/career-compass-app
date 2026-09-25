@@ -35,12 +35,12 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
+      <ThemeProvider defaultTheme="light" switchable>
         <TooltipProvider>
-          <Toaster />
+          {/* Shorter duration + fewer visible at once so a run of quick
+              actions (saving, rating a card, adding a log entry) doesn't
+              stack toasts up over the bottom nav or the sticky quiz controls. */}
+          <Toaster duration={2500} visibleToasts={2} />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

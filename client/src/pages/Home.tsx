@@ -337,23 +337,29 @@ const LONG_PRESS_MS = 350;
 // from a not-yet-flushed setState.
 function useDragReorder(itemSelector: string) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const dragState = useRef<{ id: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean } | null>(null);
+  const dragState = useRef<{ id: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean; el: HTMLElement } | null>(null);
   const justDraggedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const orderRef = useRef<string[]>([]);
 
   const start = (id: string, event: React.PointerEvent, visibleIds: string[]) => {
     const pointerId = event.pointerId;
+    const el = event.currentTarget as HTMLElement;
     const timer = setTimeout(() => {
       if (dragState.current) {
         dragState.current.dragging = true;
         justDraggedRef.current = true;
         orderRef.current = visibleIds;
         setDraggingId(id);
+        // Only once the hold is confirmed as a drag (not on every touch) do
+        // we take this item out of the native touch-scroll gesture — see
+        // the comment above .flashcard-wrap in index.css for why this can't
+        // just be a permanent CSS rule without breaking ordinary scrolling.
+        dragState.current.el.style.touchAction = "none";
         containerRef.current?.setPointerCapture(pointerId);
       }
     }, LONG_PRESS_MS);
-    dragState.current = { id, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false };
+    dragState.current = { id, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false, el };
   };
   const move = (event: React.PointerEvent, onReorder: (nextOrder: string[]) => void) => {
     const state = dragState.current;
@@ -386,6 +392,7 @@ function useDragReorder(itemSelector: string) {
   };
   const end = () => {
     if (dragState.current?.timer) clearTimeout(dragState.current.timer);
+    if (dragState.current) dragState.current.el.style.touchAction = "";
     dragState.current = null;
     setDraggingId(null);
     setTimeout(() => { justDraggedRef.current = false; }, 0);
@@ -550,7 +557,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
   // normally fires on the flip button right after, so finishing a drag
   // never also flips the card it was just dropped on.
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
-  const cardDragState = useRef<{ id: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean } | null>(null);
+  const cardDragState = useRef<{ id: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean; el: HTMLElement } | null>(null);
   const justDraggedRef = useRef(false);
   const cardGridRef = useRef<HTMLDivElement>(null);
   const [categoryOrder, setCategoryOrder] = usePersisted<string[]>("cc_card_categories", Array.from(new Set(starterCards.map((card) => card.category))));
@@ -669,12 +676,18 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
     // is a drag target.
     if ((event.target as HTMLElement).closest(".card-edit-button")) return;
     const pointerId = event.pointerId;
+    const el = event.currentTarget as HTMLElement;
     const timer = setTimeout(() => {
       if (cardDragState.current) {
         cardDragState.current.dragging = true;
         justDraggedRef.current = true;
         dragOrderRef.current = visibleCards.map((card) => card.id);
         setDraggingCardId(id);
+        // Only once the hold is confirmed as a drag (not on every touch) do we
+        // take this card out of the native touch-scroll gesture — see the
+        // comment above .flashcard-wrap in index.css for why this can't just
+        // be a permanent CSS rule without breaking ordinary swipe-scrolling.
+        cardDragState.current.el.style.touchAction = "none";
         // Capture on the grid container, not the card being dragged — that
         // card's own DOM node gets moved around by React as the reorder
         // happens (it's the whole point), and re-parenting the capturing
@@ -686,7 +699,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
         cardGridRef.current?.setPointerCapture(pointerId);
       }
     }, LONG_PRESS_MS);
-    cardDragState.current = { id, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false };
+    cardDragState.current = { id, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false, el };
   };
   const moveCardDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const state = cardDragState.current;
@@ -727,6 +740,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
   };
   const endCardDrag = () => {
     if (cardDragState.current?.timer) clearTimeout(cardDragState.current.timer);
+    if (cardDragState.current) cardDragState.current.el.style.touchAction = "";
     cardDragState.current = null;
     setDraggingCardId(null);
     setTimeout(() => { justDraggedRef.current = false; }, 0);
@@ -740,22 +754,26 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
   // click. "すべて" is a synthetic entry (not part of categoryOrder), so it's
   // simply never made draggable and never shows up as a drop target.
   const [draggingCategory, setDraggingCategory] = useState<string | null>(null);
-  const categoryDragState = useRef<{ name: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean } | null>(null);
+  const categoryDragState = useRef<{ name: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean; el: HTMLElement } | null>(null);
   const justDraggedCategoryRef = useRef(false);
   const categoryFilterRef = useRef<HTMLDivElement>(null);
   const categoryOrderDragRef = useRef<string[]>([]);
   const startCategoryDrag = (name: string, event: React.PointerEvent<HTMLButtonElement>) => {
     const pointerId = event.pointerId;
+    const el = event.currentTarget as HTMLElement;
     const timer = setTimeout(() => {
       if (categoryDragState.current) {
         categoryDragState.current.dragging = true;
         justDraggedCategoryRef.current = true;
         categoryOrderDragRef.current = [...categoryOrder];
         setDraggingCategory(name);
+        // Same dynamic touch-action toggling as the flashcard drag above —
+        // only lock out native scrolling once the hold is confirmed as a drag.
+        categoryDragState.current.el.style.touchAction = "none";
         categoryFilterRef.current?.setPointerCapture(pointerId);
       }
     }, LONG_PRESS_MS);
-    categoryDragState.current = { name, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false };
+    categoryDragState.current = { name, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false, el };
   };
   const moveCategoryDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const state = categoryDragState.current;
@@ -786,6 +804,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
   };
   const endCategoryDrag = () => {
     if (categoryDragState.current?.timer) clearTimeout(categoryDragState.current.timer);
+    if (categoryDragState.current) categoryDragState.current.el.style.touchAction = "";
     categoryDragState.current = null;
     setDraggingCategory(null);
     setTimeout(() => { justDraggedCategoryRef.current = false; }, 0);

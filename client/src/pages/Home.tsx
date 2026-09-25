@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { strToU8 } from "fflate";
 import {
-  AlertCircle, ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check,
+  AlertCircle, ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronLeft, ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Mic, Moon, Pause, Pencil, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Target, Trash2, Trophy, X,
 } from "lucide-react";
@@ -25,6 +25,13 @@ export function stageOf(company: Company): CompanyStage { return company.stage ?
 export type InterviewLogEntry = { id: string; date: string; note: string };
 export type Company = { id: string; name: string; industry: string; interest: number; salary: number | null; benefits: string; location: string; philosophy: string; person: string; notes: string; sources: string[]; updatedAt: string; stage?: CompanyStage; interviewLogs?: InterviewLogEntry[] };
 export type SelfRating = "excellent" | "good" | "fair" | "poor";
+// Top-level cards can be recolored (see CardColorPicker) so a long list of
+// otherwise-identical purple tiles is easier to tell apart at a glance —
+// e.g. color by theme or by how confident you feel about it. Child cards
+// keep the fixed purple/green flip look and don't get their own color.
+export const CARD_COLORS = ["purple", "blue", "green", "orange", "pink", "gray"] as const;
+export type CardColor = typeof CARD_COLORS[number];
+export const CARD_COLOR_LABEL: Record<CardColor, string> = { purple: "紫", blue: "青", green: "緑", orange: "橙", pink: "桃", gray: "灰" };
 // A card can be a follow-up on another card (parentId points at it) — e.g.
 // the interviewer's likely next question given a particular answer. Child
 // cards don't get their own place in the grid or category counts; they only
@@ -32,7 +39,7 @@ export type SelfRating = "excellent" | "good" | "fair" | "poor";
 // InterviewScreen's expandedParents/childrenOf). A card can also optionally
 // be linked to a company (companyId) — e.g. "なぜ弊社を志望しますか" tied to
 // the specific company it was written for.
-export type InterviewCard = { id: string; question: string; answer: string; category: string; important?: boolean; rating?: SelfRating | null; parentId?: string | null; companyId?: string | null };
+export type InterviewCard = { id: string; question: string; answer: string; category: string; important?: boolean; checked?: boolean; rating?: SelfRating | null; parentId?: string | null; companyId?: string | null; color?: CardColor };
 const RATING_LABEL: Record<SelfRating, string> = { excellent: "優", good: "良", fair: "可", poor: "不可" };
 const RATING_ORDER: SelfRating[] = ["excellent", "good", "fair", "poor"];
 
@@ -302,6 +309,16 @@ function CategoryPicker({ value, categories, onChange, resetKey }: { value: stri
   </>;
 }
 
+// A row of color swatches for recoloring a top-level interview card (see
+// CARD_COLORS) — the selected swatch gets a checkmark rather than relying on
+// a border alone, so the choice still reads clearly for anyone who can't
+// distinguish the hues from each other.
+function CardColorPicker({ value, onChange }: { value: CardColor; onChange: (color: CardColor) => void }) {
+  return <div className="color-swatch-row">
+    {CARD_COLORS.map((c) => <button type="button" key={c} className={`color-swatch color-swatch-${c}`} aria-label={CARD_COLOR_LABEL[c]} aria-pressed={value === c} onClick={() => onChange(c)}>{value === c && <Check size={13} />}</button>)}
+  </div>;
+}
+
 // Renaming for the interview card categories. Reordering used to live here
 // too (long-press the grip icon to drag a row), but that's now done inline
 // on the category chips themselves (see startCategoryDrag/moveCategoryDrag/
@@ -465,12 +482,13 @@ function collectDescendantIds(cards: InterviewCard[], id: string): string[] {
 // state it touches (flip, ratings, expanded panels, the add-child form) lives
 // in the parent InterviewScreen and is simply threaded through, since a card
 // anywhere in the tree is just another id to those handlers.
-function ChildCardView({ card, depth, flipped, setFlipped, toggleImportant, setRating, expandedParents, toggleChildren, childrenOf, addingChildFor, setAddingChildFor, childDraft, setChildDraft, addChild, setEditing }: {
+function ChildCardView({ card, depth, flipped, setFlipped, toggleImportant, toggleChecked, setRating, expandedParents, toggleChildren, childrenOf, addingChildFor, setAddingChildFor, childDraft, setChildDraft, addChild, setEditing }: {
   card: InterviewCard;
   depth: number;
   flipped: string | null;
   setFlipped: Dispatch<SetStateAction<string | null>>;
   toggleImportant: (id: string) => void;
+  toggleChecked: (id: string) => void;
   setRating: (id: string, rating: SelfRating) => void;
   expandedParents: string[];
   toggleChildren: (id: string) => void;
@@ -496,11 +514,12 @@ function ChildCardView({ card, depth, flipped, setFlipped, toggleImportant, setR
     </div>
     <div className="child-card-footer">
       <button className={`star-toggle small ${card.important ? "active" : ""}`} aria-label={card.important ? "重要を解除" : "重要にする"} onClick={() => toggleImportant(card.id)}><Star size={13} fill={card.important ? "currentColor" : "none"} /></button>
+      <button className={`check-toggle small ${card.checked ? "active" : ""}`} aria-label={card.checked ? "対策済みを解除" : "対策済みにする"} onClick={() => toggleChecked(card.id)}><CheckCircle2 size={13} fill={card.checked ? "currentColor" : "none"} /></button>
       <button className={`child-toggle small ${isExpanded ? "active" : ""}`} onClick={() => toggleChildren(card.id)}><MessageSquare size={12} />子カード{children.length > 0 && ` (${children.length})`}</button>
       <div className="rating-group small">{RATING_ORDER.map((r) => <button key={r} className={`rating-${r} ${card.rating === r ? "active" : ""}`} onClick={() => setRating(card.id, r)}>{RATING_LABEL[r]}</button>)}</div>
     </div>
     {isExpanded && <div className="child-card-panel nested">
-      {children.map((child) => <ChildCardView key={child.id} card={child} depth={depth + 1} flipped={flipped} setFlipped={setFlipped} toggleImportant={toggleImportant} setRating={setRating} expandedParents={expandedParents} toggleChildren={toggleChildren} childrenOf={childrenOf} addingChildFor={addingChildFor} setAddingChildFor={setAddingChildFor} childDraft={childDraft} setChildDraft={setChildDraft} addChild={addChild} setEditing={setEditing} />)}
+      {children.map((child) => <ChildCardView key={child.id} card={child} depth={depth + 1} flipped={flipped} setFlipped={setFlipped} toggleImportant={toggleImportant} toggleChecked={toggleChecked} setRating={setRating} expandedParents={expandedParents} toggleChildren={toggleChildren} childrenOf={childrenOf} addingChildFor={addingChildFor} setAddingChildFor={setAddingChildFor} childDraft={childDraft} setChildDraft={setChildDraft} addChild={addChild} setEditing={setEditing} />)}
       {!children.length && addingChildFor !== card.id && <p className="child-empty-hint">まだ子カードがありません。想定される深掘り質問を追加しましょう。</p>}
       {addingChildFor === card.id
         ? <div className="child-add-form">
@@ -523,7 +542,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
   const [category, setCategory] = useState("すべて");
   const [managingCategories, setManagingCategories] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [draft, setDraft] = useState<{ question: string; answer: string; category: string; companyId: string | null }>({ question: "", answer: "", category: "基本", companyId: null });
+  const [draft, setDraft] = useState<{ question: string; answer: string; category: string; companyId: string | null; color: CardColor }>({ question: "", answer: "", category: "基本", companyId: null, color: "purple" });
   const companyName = (id: string | null | undefined) => companies.find((c) => c.id === id)?.name;
   // Long-press-to-drag reordering, applied straight to the cards in the
   // grid — press and hold a card, then drag it over the slot it should land
@@ -577,15 +596,26 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
     if (draft.category === oldName) setDraft((current) => ({ ...current, category: newName }));
     toast.success("カテゴリ名を変更しました");
   };
-  const add = () => {
+  // A near-duplicate question is easy to end up with once there are a lot of
+  // cards (forgetting one was already written, or a follow-up that
+  // duplicates a top-level question) — checked case/whitespace-insensitively
+  // against every existing card, top-level or child, before actually saving.
+  const normalizeQuestion = (text: string) => text.trim().toLowerCase();
+  const findDuplicateQuestion = (text: string, excludeId?: string) => cards.find((card) => card.id !== excludeId && normalizeQuestion(card.question) === normalizeQuestion(text));
+  const confirmDuplicate = (onConfirm: () => void) => toast("同じ質問のカードがすでにあります。追加しますか？", { duration: 8000, action: { label: "追加する", onClick: onConfirm } });
+  const doAdd = () => {
     const finalCategory = ensureCategory(draft.category) || "基本";
-    if (!draft.question || !draft.answer) return toast.error("質問と答えを入力してください");
     // New cards go to the front, not the back — a card you just wrote about
     // is usually the one you want to see (and keep practicing) first.
     setCards((current) => [{ ...draft, category: finalCategory, id: `card-${Date.now()}` }, ...current]);
-    setDraft({ question: "", answer: "", category: "基本", companyId: null });
+    setDraft({ question: "", answer: "", category: "基本", companyId: null, color: "purple" });
     setShow(false);
     toast.success("面接カードを追加しました");
+  };
+  const add = () => {
+    if (!draft.question || !draft.answer) return toast.error("質問と答えを入力してください");
+    if (findDuplicateQuestion(draft.question)) return confirmDuplicate(doAdd);
+    doAdd();
   };
   const saveEdit = () => {
     if (!editing || !editing.question || !editing.answer) return toast.error("質問と答えを入力してください");
@@ -595,6 +625,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
     toast.success("面接カードを更新しました");
   };
   const toggleImportant = (id: string) => setCards((current) => current.map((card) => card.id === id ? { ...card, important: !card.important } : card));
+  const toggleChecked = (id: string) => setCards((current) => current.map((card) => card.id === id ? { ...card, checked: !card.checked } : card));
   // Tapping the currently-selected rating again clears it, so "no rating
   // yet" stays reachable without a separate button.
   const setRating = (id: string, rating: SelfRating) => setCards((current) => current.map((card) => card.id === id ? { ...card, rating: card.rating === rating ? null : rating } : card));
@@ -611,8 +642,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
   const toggleChildren = (id: string) => setExpandedParents((current) => current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
   const [addingChildFor, setAddingChildFor] = useState<string | null>(null);
   const [childDraft, setChildDraft] = useState({ question: "", answer: "" });
-  const addChild = (parent: InterviewCard) => {
-    if (!childDraft.question || !childDraft.answer) return toast.error("質問と答えを入力してください");
+  const doAddChild = (parent: InterviewCard) => {
     // A child inherits its parent's category rather than picking its own —
     // it's never shown in a category-filtered list anyway, so exposing a
     // picker for it would just be a control that does nothing.
@@ -620,6 +650,11 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
     setChildDraft({ question: "", answer: "" });
     setAddingChildFor(null);
     toast.success("子カードを追加しました");
+  };
+  const addChild = (parent: InterviewCard) => {
+    if (!childDraft.question || !childDraft.answer) return toast.error("質問と答えを入力してください");
+    if (findDuplicateQuestion(childDraft.question)) return confirmDuplicate(() => doAddChild(parent));
+    doAddChild(parent);
   };
 
   // The live order during a drag lives in this ref, not in `cards`/
@@ -768,19 +803,20 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
     {/* Rendered right above the card list (not below it) so opening the form
         with the "カード追加" button up top never requires scrolling past
         every existing card just to start typing. */}
-    {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<CategoryPicker value={draft.category} categories={categoryOrder} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label><label>企業（任意）<select value={draft.companyId ?? ""} onChange={(event) => setDraft({ ...draft, companyId: event.target.value || null })}><option value="">紐づけない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>質問<AutoGrowTextarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<AutoGrowTextarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
+    {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<CategoryPicker value={draft.category} categories={categoryOrder} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label><label>企業（任意）<select value={draft.companyId ?? ""} onChange={(event) => setDraft({ ...draft, companyId: event.target.value || null })}><option value="">紐づけない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>カードの色<CardColorPicker value={draft.color} onChange={(color) => setDraft({ ...draft, color })} /></label><label>質問<AutoGrowTextarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<AutoGrowTextarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
     <div className="flashcard-grid" ref={cardGridRef} onPointerMove={moveCardDrag} onPointerUp={endCardDrag} onPointerCancel={endCardDrag}>{visibleCards.map((card) => <div key={card.id} className="flashcard-item">
       <div
         className={`flashcard-wrap ${flipped === card.id ? "flipped" : ""} ${draggingCardId === card.id ? "dragging" : ""}`}
         onPointerDown={(event) => startCardDrag(card.id, event)}
       >
-        <button className={`flashcard ${flipped === card.id ? "flipped" : ""}`} onClick={() => { if (justDraggedRef.current) return; setFlipped(flipped === card.id ? null : card.id); }}><div className="flash-front"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
+        <button className={`flashcard card-color-${card.color ?? "purple"} ${flipped === card.id ? "flipped" : ""}`} onClick={() => { if (justDraggedRef.current) return; setFlipped(flipped === card.id ? null : card.id); }}><div className="flash-front"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
         <button className="card-edit-button" aria-label={`${card.question}を編集`} onClick={() => setEditing(card)}><Settings size={15} /></button>
       </div>
       {/* Lives outside the flip card, not on either face, so it stays put
           and tappable no matter which side (question/answer) is showing. */}
       <div className="flashcard-footer">
         <button className={`star-toggle ${card.important ? "active" : ""}`} aria-label={card.important ? "重要を解除" : "重要にする"} onClick={() => toggleImportant(card.id)}><Star size={16} fill={card.important ? "currentColor" : "none"} /></button>
+        <button className={`check-toggle ${card.checked ? "active" : ""}`} aria-label={card.checked ? "対策済みを解除" : "対策済みにする"} onClick={() => toggleChecked(card.id)}><CheckCircle2 size={16} fill={card.checked ? "currentColor" : "none"} /></button>
         <button className={`child-toggle ${expandedParents.includes(card.id) ? "active" : ""}`} onClick={() => toggleChildren(card.id)}><MessageSquare size={14} />子カード{childrenOf(card.id).length > 0 && ` (${childrenOf(card.id).length})`}</button>
         <div className="rating-group">{RATING_ORDER.map((r) => <button key={r} className={`rating-${r} ${card.rating === r ? "active" : ""}`} onClick={() => setRating(card.id, r)}>{RATING_LABEL[r]}</button>)}</div>
       </div>
@@ -788,7 +824,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
           shown by default, since it'd otherwise clutter every card even
           when most don't have any. */}
       {expandedParents.includes(card.id) && <div className="child-card-panel">
-        {childrenOf(card.id).map((child) => <ChildCardView key={child.id} card={child} depth={1} flipped={flipped} setFlipped={setFlipped} toggleImportant={toggleImportant} setRating={setRating} expandedParents={expandedParents} toggleChildren={toggleChildren} childrenOf={childrenOf} addingChildFor={addingChildFor} setAddingChildFor={setAddingChildFor} childDraft={childDraft} setChildDraft={setChildDraft} addChild={addChild} setEditing={setEditing} />)}
+        {childrenOf(card.id).map((child) => <ChildCardView key={child.id} card={child} depth={1} flipped={flipped} setFlipped={setFlipped} toggleImportant={toggleImportant} toggleChecked={toggleChecked} setRating={setRating} expandedParents={expandedParents} toggleChildren={toggleChildren} childrenOf={childrenOf} addingChildFor={addingChildFor} setAddingChildFor={setAddingChildFor} childDraft={childDraft} setChildDraft={setChildDraft} addChild={addChild} setEditing={setEditing} />)}
         {!childrenOf(card.id).length && addingChildFor !== card.id && <p className="child-empty-hint">まだ子カードがありません。想定される深掘り質問を追加しましょう。</p>}
         {addingChildFor === card.id
           ? <div className="child-add-form">
@@ -803,7 +839,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
       </div>}
     </div>)}</div>
     {!visibleCards.length && <div className="empty-state large"><BookOpen size={24} />このカテゴリにはカードがありません。</div>}
-    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>{editing.parentId ? "子カードを編集" : "面接カードを編集"}</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid">{!editing.parentId && <label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label>}{!editing.parentId && <label className="wide">企業（任意）<select value={editing.companyId ?? ""} onChange={(event) => setEditing({ ...editing, companyId: event.target.value || null })}><option value="">紐づけない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}<label className="wide">質問<AutoGrowTextarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<AutoGrowTextarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { const idsToRemove = new Set([editing.id, ...collectDescendantIds(cards, editing.id)]); setCards((current) => current.filter((card) => !idsToRemove.has(card.id))); setEditing(null); toast.success(editing.parentId ? "子カードを削除しました" : "面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
+    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>{editing.parentId ? "子カードを編集" : "面接カードを編集"}</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid">{!editing.parentId && <label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label>}{!editing.parentId && <label className="wide">企業（任意）<select value={editing.companyId ?? ""} onChange={(event) => setEditing({ ...editing, companyId: event.target.value || null })}><option value="">紐づけない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}{!editing.parentId && <label className="wide">カードの色<CardColorPicker value={editing.color ?? "purple"} onChange={(color) => setEditing({ ...editing, color })} /></label>}<label className="wide">質問<AutoGrowTextarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<AutoGrowTextarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { const idsToRemove = new Set([editing.id, ...collectDescendantIds(cards, editing.id)]); setCards((current) => current.filter((card) => !idsToRemove.has(card.id))); setEditing(null); toast.success(editing.parentId ? "子カードを削除しました" : "面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
     {managingCategories && <CategoryManager categories={categoryOrder} onRename={renameCategory} onClose={() => setManagingCategories(false)} />}
   </div>;
 }
@@ -927,7 +963,7 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
         card (and the sticky bars stay correctly anchored) instead of
         overflowing a box sized for the question. */}
     <div className="quiz-card-stage">
-      <button className={`quiz-flashcard ${flipped ? "flipped" : ""}`} onClick={onFlip}>
+      <button className={`quiz-flashcard card-color-${card.color ?? "purple"} ${flipped ? "flipped" : ""}`} onClick={onFlip}>
         <span className="card-label">{card.category}</span>
         {flipped ? <p className="quiz-face-text">{card.answer}</p> : <h3 className="quiz-face-text">{card.question}</h3>}
         <span className="flip-hint">{flipped ? <>もう一度タップで質問へ <RefreshCw size={15} /></> : <>タップして答えを見る <ChevronRight size={15} /></>}</span>

@@ -7,7 +7,11 @@ body { margin: 0; min-width: 320px; background: #f7f7fb; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; border: 0; }
 button:active { transform: scale(.98); }
-.app-shell { display: flex; min-height: 100vh; color: #24243a; }
+/* var(--foreground) rather than a literal color, so headings/text that
+   don't have their own dark-mode override (e.g. .page-lead h2, .topbar h1)
+   still inherit the light/dark-appropriate default instead of staying stuck
+   at the light-mode navy — which read as near-invisible on a dark background. */
+.app-shell { display: flex; min-height: 100vh; color: var(--foreground, #24243a); }
 .side-rail { width: 238px; flex: 0 0 238px; padding: 32px 18px 24px; background: #fff; border-right: 1px solid #ececf4; display: flex; flex-direction: column; }
 .brand-mark { display: flex; gap: 11px; align-items: center; padding: 0 12px 38px; }
 .brand-symbol { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 13px; color: #fff; background: #6654d9; box-shadow: 0 8px 18px #6654d933; }
@@ -67,7 +71,22 @@ button:active { transform: scale(.98); }
 .add-company-box select { width: 100px; border: 0; outline: 0; color: #77778c; background: transparent; font-size: 11px; }.notice { display: flex; gap: 8px; margin-top: 13px; padding: 12px 14px; color: #7a739e; background: #f5f3ff; border-radius: 12px; font-size: 11px; line-height: 1.6; }.notice svg { flex: 0 0 auto; color: #7565df; margin-top: 1px; }.notice strong { color: #6654d9; }
 .count-badge { display: inline-grid; place-items: center; min-width: 23px; height: 23px; margin-left: 4px; color: #6654d9; background: #efedff; border-radius: 8px; font-size: 11px; vertical-align: 2px; }.company-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }.company-card { min-width: 0; display: flex; align-items: center; gap: 13px; padding: 17px; color: inherit; background: #fff; border: 1px solid #efeff5; border-radius: 16px; text-align: left; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }.company-card:hover { border-color: #d9d2ff; box-shadow: 0 8px 22px #5042930d; }.company-card.dragging { z-index: 5; border-color: #a99bf4; box-shadow: 0 16px 34px #6654d94d; transform: scale(1.03); }.company-avatar { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; color: #6654d9; background: #efedff; border-radius: 13px; font-size: 18px; font-weight: 800; }.company-avatar.small { width: 34px; height: 34px; border-radius: 11px; font-size: 14px; }.company-card-main { min-width: 0; flex: 1; }.company-title { display: flex; align-items: center; gap: 8px; min-width: 0; }.company-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }.industry-tag { flex: 0 0 auto; padding: 3px 7px; color: #8778d9; background: #f4f2ff; border-radius: 6px; font-size: 9px; }.company-meta { display: flex; flex-wrap: wrap; gap: 6px 15px; margin-top: 8px; color: #9999aa; font-size: 10px; }
 .summary-banner { min-height: 184px; margin-top: 28px; }.summary-banner svg { margin-right: 20px; color: #dcd6ff; }.chip-row { display: flex; gap: 8px; overflow-x: auto; margin: 19px 0 13px; padding-bottom: 3px; }.chip { padding: 8px 14px; color: #858597; background: #fff; border: 1px solid #ecebf3; border-radius: 9px; font-size: 11px; white-space: nowrap; }.chip.selected { color: #fff; background: #6654d9; border-color: #6654d9; }.rank-tabs { display: flex; gap: 7px; margin: 19px 0 13px; }.rank-tabs button { display: flex; align-items: center; gap: 7px; padding: 10px 14px; color: #858597; background: #fff; border: 1px solid #ececf3; border-radius: 10px; font-size: 11px; font-weight: 700; }.rank-tabs button.active { color: #fff; background: #6654d9; border-color: #6654d9; }.yen-icon { font-size: 15px; font-weight: 800; }.ranking-list { overflow: hidden; border: 1px solid #ececf3; border-radius: 18px; background: #fff; }.ranking-row { display: flex; align-items: center; gap: 13px; min-width: 0; padding: 15px 17px; background: #fff; border-bottom: 1px solid #f0f0f5; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }.ranking-row:last-child { border-bottom: 0; }.ranking-row.dragging { position: relative; z-index: 5; border-radius: 12px; box-shadow: 0 16px 34px #6654d94d; transform: scale(1.02); }.rank-number { width: 22px; flex: 0 0 auto; color: #9e9eae; font-size: 16px; font-weight: 800; text-align: center; }.rank-1 { color: #f0a644; }.rank-2 { color: #9ea2b2; }.rank-3 { color: #bb8563; }.ranking-info { min-width: 150px; flex: 1; padding: 0; color: inherit; background: transparent; text-align: left; }.ranking-info strong, .ranking-info span { display: block; }.ranking-info strong { font-size: 14px; }.ranking-info span { margin-top: 4px; color: #9999aa; font-size: 10px; }.ranking-value { width: 105px; text-align: right; }.ranking-value small, .ranking-value strong { display: block; }.ranking-value small { color: #aaaaba; font-size: 9px; }.ranking-value strong { margin-top: 4px; color: #6654d9; font-size: 12px; }
-.page-lead { display: flex; justify-content: space-between; gap: 22px; align-items: flex-start; padding: 0 0 22px; }.page-lead h2 { margin: 6px 0 8px; font-size: 25px; letter-spacing: -.06em; }.page-lead p:not(.eyebrow) { margin: 0; color: #9191a1; font-size: 12px; line-height: 1.7; }.flashcard-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }.flashcard { position: relative; min-height: 210px; padding: 0; color: #fff; background: transparent; perspective: 1000px; text-align: left; }.flash-front, .flash-back { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 25px; border-radius: 19px; backface-visibility: hidden; transition: transform .35s cubic-bezier(.23,1,.32,1); }.flash-front { background: linear-gradient(145deg, #6554d9, #8976ee); }.flash-back { color: #41347f; background: #eeeaff; transform: rotateY(180deg); }.flashcard.flipped .flash-front { transform: rotateY(180deg); }.flashcard.flipped .flash-back { transform: rotateY(360deg); }.card-label { color: #d5ceff; font-size: 9px; font-weight: 800; letter-spacing: .13em; }.flash-back .card-label { color: #8778d9; }.flash-front h3 { max-width: 90%; margin: auto 0; font-size: 20px; line-height: 1.5; letter-spacing: -.05em; white-space: pre-line; }.flash-back p { margin: auto 0; font-size: 14px; line-height: 1.8; white-space: pre-line; }.flip-hint { display: flex; align-items: center; gap: 5px; color: #e2ddff; font-size: 10px; }.flash-back .flip-hint { color: #8578bd; }.card-filter { display: flex; justify-content: space-between; margin: 3px 0 13px; color: #9999aa; font-size: 10px; }.hint { display: flex; align-items: center; gap: 5px; }
+.page-lead { display: flex; justify-content: space-between; gap: 22px; align-items: flex-start; padding: 0 0 22px; }.page-lead h2 { margin: 6px 0 8px; font-size: 25px; letter-spacing: -.06em; }.page-lead p:not(.eyebrow) { margin: 0; color: #9191a1; font-size: 12px; line-height: 1.7; }.flashcard-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }.flashcard { position: relative; min-height: 210px; padding: 0; color: #fff; background: transparent; perspective: 1000px; text-align: left; }.flash-front, .flash-back { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 25px; border-radius: 19px; backface-visibility: hidden; transition: transform .35s cubic-bezier(.23,1,.32,1); }
+/* Card color theming (see CardColorPicker): the palette lives as custom
+   properties on the flip card itself (and on .quiz-flashcard, which shows
+   the same cards one at a time), so .flash-front/.flash-back/.card-label/
+   .flip-hint only ever read a variable and never need their own per-color
+   rule. .card-color-purple is simply these defaults with no override block.
+   Dark mode intentionally keeps a single neutral dark "back" face for every
+   color (see the .dark block below) rather than a per-hue dark variant —
+   the front face still shows the chosen color either way. */
+.flashcard, .quiz-flashcard { --card-front-a: #6554d9; --card-front-b: #8976ee; --card-label-color: #d5ceff; --card-hint-color: #e2ddff; --card-back-bg: #eeeaff; --card-back-text: #41347f; --card-back-label-color: #8778d9; --card-back-hint-color: #8578bd; }
+.flashcard.card-color-blue, .quiz-flashcard.card-color-blue { --card-front-a: #2f6fd6; --card-front-b: #63a0ef; --card-label-color: #cfe3ff; --card-hint-color: #dcebff; --card-back-bg: #e8f1ff; --card-back-text: #234a7a; --card-back-label-color: #3f7fd1; --card-back-hint-color: #4c7cb0; }
+.flashcard.card-color-green, .quiz-flashcard.card-color-green { --card-front-a: #2f9c74; --card-front-b: #5cc79f; --card-label-color: #cdf3e4; --card-hint-color: #dbf5ea; --card-back-bg: #e6f8f0; --card-back-text: #1f5f47; --card-back-label-color: #2f9c74; --card-back-hint-color: #3f8a6c; }
+.flashcard.card-color-orange, .quiz-flashcard.card-color-orange { --card-front-a: #d17a2e; --card-front-b: #eaa563; --card-label-color: #ffe6cf; --card-hint-color: #ffeedb; --card-back-bg: #fff2e6; --card-back-text: #7a4318; --card-back-label-color: #c97a34; --card-back-hint-color: #b17f4c; }
+.flashcard.card-color-pink, .quiz-flashcard.card-color-pink { --card-front-a: #c94f83; --card-front-b: #e585ac; --card-label-color: #ffd9e8; --card-hint-color: #ffe3ee; --card-back-bg: #ffeaf3; --card-back-text: #7a2c4d; --card-back-label-color: #c14f80; --card-back-hint-color: #b06485; }
+.flashcard.card-color-gray, .quiz-flashcard.card-color-gray { --card-front-a: #5c5c6e; --card-front-b: #8a8a9c; --card-label-color: #e4e4ec; --card-hint-color: #ececf2; --card-back-bg: #efeff3; --card-back-text: #33333f; --card-back-label-color: #6b6b7c; --card-back-hint-color: #74748a; }
+.flash-front { background: linear-gradient(145deg, var(--card-front-a), var(--card-front-b)); }.flash-back { color: var(--card-back-text); background: var(--card-back-bg); transform: rotateY(180deg); }.flashcard.flipped .flash-front { transform: rotateY(180deg); }.flashcard.flipped .flash-back { transform: rotateY(360deg); }.card-label { color: var(--card-label-color, #d5ceff); font-size: 9px; font-weight: 800; letter-spacing: .13em; }.flash-back .card-label { color: var(--card-back-label-color, #8778d9); }.flash-front h3 { max-width: 90%; margin: auto 0; font-size: 20px; line-height: 1.5; letter-spacing: -.05em; white-space: pre-line; }.flash-back p { margin: auto 0; font-size: 14px; line-height: 1.8; white-space: pre-line; }.flip-hint { display: flex; align-items: center; gap: 5px; color: var(--card-hint-color, #e2ddff); font-size: 10px; }.flash-back .flip-hint { color: var(--card-back-hint-color, #8578bd); }.card-filter { display: flex; justify-content: space-between; margin: 3px 0 13px; color: #9999aa; font-size: 10px; }.hint { display: flex; align-items: center; gap: 5px; }
 .inline-form, .settings-card { margin-top: 17px; padding: 22px; border: 1px solid #e8e7f2; border-radius: 18px; background: #fff; }.inline-form { display: grid; gap: 13px; }.form-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }.form-heading h3 { margin: 5px 0 0; font-size: 18px; }.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }.form-grid .wide { grid-column: 1 / -1; }.inline-form label, .form-grid label { display: grid; gap: 6px; color: #77778b; font-size: 10px; font-weight: 700; }.inline-form input, .inline-form textarea, .form-grid input, .form-grid textarea, .form-grid select { width: 100%; padding: 10px 11px; color: #313147; background: #fbfbfe; border: 1px solid #e7e6f0; border-radius: 9px; outline: none; font-size: 12px; font-weight: 400; resize: vertical; }.inline-form input:focus, .inline-form textarea:focus, .form-grid input:focus, .form-grid textarea:focus, .form-grid select:focus { border-color: #a99bf4; box-shadow: 0 0 0 3px #ece9ff; }.inline-form textarea, .form-grid textarea { min-height: 72px; }.primary-button, .secondary-button, .danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 15px; border-radius: 10px; font-size: 11px; font-weight: 700; }.primary-button { color: #fff; background: #6654d9; box-shadow: 0 7px 14px #6654d926; }.primary-button:hover { background: #5948ca; }.secondary-button { color: #6654d9; background: #f1efff; }.danger-button { color: #d16464; background: #fff0f0; }.primary-button:disabled, .secondary-button:disabled, .danger-button:disabled { opacity: .45; pointer-events: none; }.modal-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: #24243a80; }.editor-modal { width: min(720px, 100%); max-height: min(850px, 92vh); overflow: auto; padding: 25px; border-radius: 20px; background: #fff; box-shadow: 0 25px 70px #24243a33; }.modal-header, .modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.modal-header h2 { margin: 6px 0 21px; font-size: 24px; letter-spacing: -.06em; }.modal-footer { margin-top: 22px; }.modal-footer > div { display: flex; gap: 8px; }
 /* Grows with its content (see AutoGrowTextarea) instead of scrolling
    internally, so switching off the manual drag-handle and internal
@@ -106,14 +125,14 @@ textarea.autogrow { overflow: hidden; resize: none; }
    (that trick fixes both faces to the same box size, which is fine for
    uniform grid tiles but would silently clip or overflow a single long
    quiz answer instead of growing the card to fit it). */
-.quiz-flashcard { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 480px; min-height: 280px; padding: 28px; color: #fff; background: linear-gradient(145deg, #6554d9, #8976ee); border-radius: 19px; text-align: left; }
-.quiz-flashcard.flipped { color: #41347f; background: #eeeaff; }
-.quiz-flashcard .card-label { color: #d5ceff; font-size: 9px; font-weight: 800; letter-spacing: .13em; }
-.quiz-flashcard.flipped .card-label { color: #8778d9; }
+.quiz-flashcard { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 480px; min-height: 280px; padding: 28px; color: #fff; background: linear-gradient(145deg, var(--card-front-a), var(--card-front-b)); border-radius: 19px; text-align: left; }
+.quiz-flashcard.flipped { color: var(--card-back-text); background: var(--card-back-bg); }
+.quiz-flashcard .card-label { color: var(--card-label-color, #d5ceff); font-size: 9px; font-weight: 800; letter-spacing: .13em; }
+.quiz-flashcard.flipped .card-label { color: var(--card-back-label-color, #8778d9); }
 .quiz-face-text { flex: 1; margin: auto 0; font-size: 20px; line-height: 1.5; letter-spacing: -.05em; white-space: pre-line; }
 .quiz-flashcard.flipped .quiz-face-text { font-size: 14px; font-weight: 400; letter-spacing: normal; line-height: 1.8; }
-.quiz-flashcard .flip-hint { display: flex; align-items: center; gap: 5px; color: #e2ddff; font-size: 10px; }
-.quiz-flashcard.flipped .flip-hint { color: #8578bd; }
+.quiz-flashcard .flip-hint { display: flex; align-items: center; gap: 5px; color: var(--card-hint-color, #e2ddff); font-size: 10px; }
+.quiz-flashcard.flipped .flip-hint { color: var(--card-back-hint-color, #8578bd); }
 /* On top of that, sticky keeps it pinned near the bottom of the VISIBLE
    viewport (not the flex column's true end) once a long answer pushes the
    card past one screen, so "次へ/前へ" never need scrolling to reach; the
@@ -169,7 +188,27 @@ body { background: var(--background); color: var(--foreground); }
 .flashcard-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; border: 1px solid #ececf3; border-radius: 12px; background: #fff; }
 .star-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; color: #c7c5d6; background: #f7f6fb; border-radius: 9px; }
 .star-toggle.active { color: #f0a644; background: #fff3e0; }
+/* Sits right next to the star (重要にする) but marks a separate "prepared /
+   reviewed" state, so the two can be toggled independently of each other
+   and of the 優/良/可/不可 self-rating. */
+.check-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; color: #c7c5d6; background: #f7f6fb; border-radius: 9px; }
+.check-toggle.active { color: #4caa8e; background: #e8f7f1; }
+.check-toggle.small { width: 24px; height: 24px; }
 .rating-group { display: flex; gap: 4px; }
+/* Color swatches for CardColorPicker (see the add/edit card forms) — a
+   ring rather than a color change on selection, plus a checkmark inside the
+   chosen swatch, so the selected color is still obvious without relying on
+   telling the hues apart. */
+.color-swatch-row { display: flex; flex-wrap: wrap; gap: 9px; padding-top: 2px; }
+.color-swatch { width: 27px; height: 27px; display: grid; place-items: center; flex: 0 0 auto; color: #fff; border-radius: 50%; border: 2px solid transparent; box-shadow: 0 0 0 1px #00000014 inset; }
+.color-swatch[aria-pressed="true"] { border-color: #24243a; }
+.dark .color-swatch[aria-pressed="true"] { border-color: #fff; }
+.color-swatch-purple { background: #6654d9; }
+.color-swatch-blue { background: #3f7fd1; }
+.color-swatch-green { background: #4caa8e; }
+.color-swatch-orange { background: #d98654; }
+.color-swatch-pink { background: #d1638f; }
+.color-swatch-gray { background: #77778c; }
 .rating-group button { padding: 7px 9px; color: #858597; background: #f7f6fb; border-radius: 8px; font-size: 10px; font-weight: 700; }
 .rating-excellent.active { color: #fff; background: #4caa8e; }
 .rating-good.active { color: #fff; background: #6bbda7; }
@@ -397,7 +436,7 @@ body { background: var(--background); color: var(--foreground); }
 .dark .danger-button { color: #ff9c9c; background: #442833; }
 .dark .chip, .dark .rank-tabs button, .dark .category-filter button, .dark .segmented-tabs,
 .dark .segmented-tabs button, .dark .mode-choice-icon, .dark .settings-icon, .dark .child-toggle,
-.dark .star-toggle, .dark .rating-group button, .dark .stage-tag, .dark .industry-tag,
+.dark .star-toggle, .dark .check-toggle, .dark .rating-group button, .dark .stage-tag, .dark .industry-tag,
 .dark .count-badge, .dark .filter-label-button, .dark .company-avatar, .dark .child-add-button,
 .dark .timer-reset, .dark .check-circle {
   color: #b6aedd; background: #332f57; border-color: #3a3660;
@@ -406,6 +445,7 @@ body { background: var(--background); color: var(--foreground); }
 .dark .segmented-tabs button.active, .dark .star-toggle.active, .dark .child-toggle.active {
   color: #fff; background: #6654d9; border-color: #6654d9;
 }
+.dark .check-toggle.active { color: #7fe0be; background: #1c3a30; }
 .dark .filter-label-button { background: transparent; border: 0; }
 .dark .settings-icon.green { color: #7fe0be; background: #1c3a30; }
 .dark .settings-icon.orange { color: #ffb27e; background: #3d2b1c; }

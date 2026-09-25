@@ -171,18 +171,19 @@ body { background: var(--background); color: var(--foreground); }
    pointermove-based drag and wins partway through. But setting it here as a
    permanent class rule blocks EVERY touch on these items from scrolling the
    page at all, long-press or not, which is worse than the original bug.
-   Instead each drag hook (startCardDrag, startCategoryDrag, useDragReorder's
-   start) sets style.touchAction = "none" on the specific element only once
-   its long-press timer actually fires, and clears it again when the drag
-   ends — so a quick swipe (timer never fires) still scrolls normally, and
-   only a genuine hold-then-drag takes over the gesture. */
-.flashcard-wrap { position: relative; min-height: 210px; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+   Instead each drag hook (startCategoryDrag, useDragReorder's start) sets
+   style.touchAction = "none" on the specific element only once its
+   long-press timer actually fires, and clears it again when the drag ends —
+   so a quick swipe (timer never fires) still scrolls normally, and only a
+   genuine hold-then-drag takes over the gesture. The interview cards below
+   used to use this same long-press-drag pattern too, but that turned out to
+   be unreliable on real touch hardware (some browsers decide whether a
+   touch will scroll right at the initial touchstart, so flipping
+   touch-action mid-gesture doesn't reliably win control of it on every
+   device) — they're reordered with plain up/down buttons instead now, so
+   .flashcard-wrap needs none of this. */
+.flashcard-wrap { position: relative; min-height: 210px; }
 .flashcard-wrap .flashcard { position: absolute; inset: 0; width: 100%; height: 100%; }
-/* Picked up by a long press (see startCardDrag in InterviewScreen) — lifts
-   the card so dragging it to a new spot in the grid reads as a deliberate
-   pickup, not a layout glitch. */
-.flashcard-wrap.dragging { z-index: 5; }
-.flashcard-wrap.dragging .flashcard { box-shadow: 0 16px 34px #6654d94d; transform: scale(1.03); }
 /* Front/back are stacked with position:absolute so they can overlap for the
    3D flip — but an absolutely positioned box never grows its parent, so a
    long answer just overflowed the fixed-height card and got cut off. Once a
@@ -196,6 +197,14 @@ body { background: var(--background); color: var(--foreground); }
 .flashcard-grid { align-items: start; }
 .card-edit-button { position: absolute; z-index: 3; top: 12px; right: 12px; width: 31px; height: 31px; display: grid; place-items: center; color: #e5e0ff; background: #ffffff24; border: 1px solid #ffffff30; border-radius: 9px; }
 .card-edit-button:hover { color: #fff; background: #ffffff42; }
+/* Sits directly below the gear button — the up/down reordering buttons that
+   replaced long-press-drag for the interview cards (see the comment above
+   .flashcard-wrap). Two stacked small buttons rather than one bigger
+   "reorder" control, so each tap target still stays a comfortable size. */
+.card-order-buttons { position: absolute; z-index: 3; top: 51px; right: 12px; display: flex; flex-direction: column; gap: 6px; }
+.card-order-button { width: 31px; height: 26px; display: grid; place-items: center; color: #e5e0ff; background: #ffffff24; border: 1px solid #ffffff30; border-radius: 9px; }
+.card-order-button:hover { color: #fff; background: #ffffff42; }
+.card-order-button:disabled { color: #ffffff5c; background: #ffffff14; cursor: default; }
 .flashcard-item { display: flex; flex-direction: column; gap: 8px; }
 .flashcard-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; border: 1px solid #ececf3; border-radius: 12px; background: #fff; }
 .star-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; color: #c7c5d6; background: #f7f6fb; border-radius: 9px; }

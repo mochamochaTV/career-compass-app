@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { strToU8 } from "fflate";
 import {
   AlertCircle, ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronLeft, ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Mic, Moon, Pause, Pencil, Play, Plus,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Mic, Moon, Pause, Pencil, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -326,8 +326,7 @@ function CardColorPicker({ value, onChange }: { value: CardColor; onChange: (col
 const LONG_PRESS_MS = 350;
 
 // Generic long-press-to-drag reordering: press an item to lift it, drag to
-// the slot it should land in. Same mechanics as the interview cards and
-// category chips (see startCardDrag/moveCardDrag/endCardDrag and
+// the slot it should land in. Same mechanics as the category chips (see
 // startCategoryDrag/moveCategoryDrag/endCategoryDrag in InterviewScreen) —
 // pulled into one hook here for the company list and ranking list, which
 // need the identical pattern twice more: pointer capture goes on the STABLE
@@ -420,11 +419,6 @@ function CategoryManager({ categories, onRename, onClose }: { categories: string
     </section>
   </div>;
 }
-
-// Long-press-to-drag reordering for the interview cards themselves, applied
-// straight to the cards in the grid (see startCardDrag/moveCardDrag/
-// endCardDrag in InterviewScreen below) — no separate "reorder" screen or
-// button needed; press and hold a card, then drag it where it should go.
 
 // A stopwatch for timing a practice answer: tap to start, tap again to
 // pause, and (once paused) a small reset button appears to zero it out.
@@ -551,15 +545,6 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
   const [searchQuery, setSearchQuery] = useState("");
   const [draft, setDraft] = useState<{ question: string; answer: string; category: string; companyId: string | null; color: CardColor }>({ question: "", answer: "", category: "基本", companyId: null, color: "purple" });
   const companyName = (id: string | null | undefined) => companies.find((c) => c.id === id)?.name;
-  // Long-press-to-drag reordering, applied straight to the cards in the
-  // grid — press and hold a card, then drag it over the slot it should land
-  // in. `justDraggedRef` swallows the click a long-press-and-release
-  // normally fires on the flip button right after, so finishing a drag
-  // never also flips the card it was just dropped on.
-  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
-  const cardDragState = useRef<{ id: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean; el: HTMLElement } | null>(null);
-  const justDraggedRef = useRef(false);
-  const cardGridRef = useRef<HTMLDivElement>(null);
   const [categoryOrder, setCategoryOrder] = usePersisted<string[]>("cc_card_categories", Array.from(new Set(starterCards.map((card) => card.category))));
 
   // Keep categoryOrder in sync with whatever categories actually show up on
@@ -664,86 +649,28 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
     doAddChild(parent);
   };
 
-  // The live order during a drag lives in this ref, not in `cards`/
-  // `visibleCards` — a fast drag can fire several pointermove events before
-  // React has re-rendered from the previous one's setCards call, and reading
-  // fromIndex back out of the (still stale) state on those events would
-  // repeatedly compute the card's OLD position and make the reorder stall
-  // or thrash instead of tracking the pointer.
-  const dragOrderRef = useRef<string[]>([]);
-  const startCardDrag = (id: string, event: React.PointerEvent<HTMLDivElement>) => {
-    // Let the edit (gear) button behave normally — only the card body itself
-    // is a drag target.
-    if ((event.target as HTMLElement).closest(".card-edit-button")) return;
-    const pointerId = event.pointerId;
-    const el = event.currentTarget as HTMLElement;
-    const timer = setTimeout(() => {
-      if (cardDragState.current) {
-        cardDragState.current.dragging = true;
-        justDraggedRef.current = true;
-        dragOrderRef.current = visibleCards.map((card) => card.id);
-        setDraggingCardId(id);
-        // Only once the hold is confirmed as a drag (not on every touch) do we
-        // take this card out of the native touch-scroll gesture — see the
-        // comment above .flashcard-wrap in index.css for why this can't just
-        // be a permanent CSS rule without breaking ordinary swipe-scrolling.
-        cardDragState.current.el.style.touchAction = "none";
-        // Capture on the grid container, not the card being dragged — that
-        // card's own DOM node gets moved around by React as the reorder
-        // happens (it's the whole point), and re-parenting the capturing
-        // element mid-drag silently drops the capture, which would strand
-        // the drag with no further pointermove/up ever arriving. The grid
-        // container itself never moves, so it keeps receiving every event
-        // for this pointer no matter how many times the cards inside it
-        // get reshuffled.
-        cardGridRef.current?.setPointerCapture(pointerId);
-      }
-    }, LONG_PRESS_MS);
-    cardDragState.current = { id, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false, el };
-  };
-  const moveCardDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const state = cardDragState.current;
-    if (!state) return;
-    const deltaX = event.clientX - state.startX;
-    const deltaY = event.clientY - state.startY;
-    if (!state.dragging) {
-      // A quick swipe (e.g. scrolling the page) cancels the pending
-      // long-press instead of hijacking the gesture.
-      if (Math.hypot(deltaX, deltaY) > 12 && state.timer) { clearTimeout(state.timer); cardDragState.current = null; }
-      return;
-    }
-    // Hit-test against every visible card's live position (not a fixed row
-    // height) so this works whether the grid is one column (mobile) or two
-    // (desktop) — swap in whichever slot the pointer is currently closest to.
-    const items = Array.from(cardGridRef.current?.querySelectorAll<HTMLElement>(".flashcard-item") ?? []);
-    if (!items.length) return;
-    let closestIndex = -1;
-    let closestDist = Infinity;
-    items.forEach((el, i) => {
-      const rect = el.getBoundingClientRect();
-      const dist = Math.hypot(event.clientX - (rect.left + rect.width / 2), event.clientY - (rect.top + rect.height / 2));
-      if (dist < closestDist) { closestDist = dist; closestIndex = i; }
-    });
-    const order = dragOrderRef.current;
-    const fromIndex = order.indexOf(state.id);
-    if (fromIndex === -1 || closestIndex === -1 || closestIndex === fromIndex) return;
+  // Reordering used to be a long-press-and-drag gesture, but that turned out
+  // to be too unreliable across real touch hardware (browsers can lock in
+  // whether a touch scrolls the page right at the initial touchstart, so
+  // toggling touch-action mid-gesture doesn't reliably take over the
+  // gesture on every device) — plain up/down buttons always work the same
+  // way everywhere, at the cost of one tap per step instead of a single
+  // drag. Swaps the card with its visible neighbor and remaps that back
+  // into the full `cards` array, leaving every filtered-out card exactly
+  // where it already was.
+  const moveCard = (id: string, direction: "up" | "down") => {
+    const order = visibleCards.map((card) => card.id);
+    const fromIndex = order.indexOf(id);
+    const toIndex = direction === "up" ? fromIndex - 1 : fromIndex + 1;
+    if (fromIndex === -1 || toIndex < 0 || toIndex >= order.length) return;
     const nextOrder = [...order];
-    nextOrder.splice(fromIndex, 1);
-    nextOrder.splice(closestIndex, 0, state.id);
-    dragOrderRef.current = nextOrder;
+    [nextOrder[fromIndex], nextOrder[toIndex]] = [nextOrder[toIndex], nextOrder[fromIndex]];
     const visibleSet = new Set(order);
     setCards((current) => {
       const cardById = new Map(current.map((card) => [card.id, card]));
       let cursor = 0;
       return current.map((card) => (visibleSet.has(card.id) ? cardById.get(nextOrder[cursor++])! : card));
     });
-  };
-  const endCardDrag = () => {
-    if (cardDragState.current?.timer) clearTimeout(cardDragState.current.timer);
-    if (cardDragState.current) cardDragState.current.el.style.touchAction = "";
-    cardDragState.current = null;
-    setDraggingCardId(null);
-    setTimeout(() => { justDraggedRef.current = false; }, 0);
   };
 
   // Same long-press-drag pattern as the cards above, applied to the category
@@ -818,18 +745,23 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
     <div className={`category-filter ${categoriesExpanded ? "expanded" : ""}`} ref={categoryFilterRef} onPointerMove={moveCategoryDrag} onPointerUp={endCategoryDrag} onPointerCancel={endCategoryDrag}><button type="button" className="filter-label-button" onClick={() => setCategoriesExpanded((value) => !value)}>カテゴリ<ChevronDown size={13} className={categoriesExpanded ? "rotated" : ""} /></button>{categories.map((item) => item === "すべて"
       ? <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}<small>{topLevelCards.length}</small></button>
       : <button key={item} className={`category-chip ${category === item ? "active" : ""} ${draggingCategory === item ? "dragging" : ""}`} onPointerDown={(event) => startCategoryDrag(item, event)} onClick={() => { if (justDraggedCategoryRef.current) return; setCategory(item); }}>{item}<small>{topLevelCards.filter((card) => card.category === item).length}</small></button>)}<button className="icon-button category-manage-button" aria-label="カテゴリを編集" onClick={() => setManagingCategories(true)}><Settings size={15} /></button></div>
-    <div className="card-filter"><span>{visibleCards.length} cards</span><span className="hint"><GripVertical size={14} />長押しで並び替え</span><span className="hint"><RefreshCw size={14} />表と裏をタップで切替</span></div>
+    <div className="card-filter"><span>{visibleCards.length} cards</span><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span><span className="hint"><RefreshCw size={14} />表と裏をタップで切替</span></div>
     {/* Rendered right above the card list (not below it) so opening the form
         with the "カード追加" button up top never requires scrolling past
         every existing card just to start typing. */}
     {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<CategoryPicker value={draft.category} categories={categoryOrder} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label><label>企業（任意）<select value={draft.companyId ?? ""} onChange={(event) => setDraft({ ...draft, companyId: event.target.value || null })}><option value="">紐づけない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>カードの色<CardColorPicker value={draft.color} onChange={(color) => setDraft({ ...draft, color })} /></label><label>質問<AutoGrowTextarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<AutoGrowTextarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
-    <div className="flashcard-grid" ref={cardGridRef} onPointerMove={moveCardDrag} onPointerUp={endCardDrag} onPointerCancel={endCardDrag}>{visibleCards.map((card) => <div key={card.id} className="flashcard-item">
-      <div
-        className={`flashcard-wrap ${flipped === card.id ? "flipped" : ""} ${draggingCardId === card.id ? "dragging" : ""}`}
-        onPointerDown={(event) => startCardDrag(card.id, event)}
-      >
-        <button className={`flashcard card-color-${card.color ?? "purple"} ${flipped === card.id ? "flipped" : ""}`} onClick={() => { if (justDraggedRef.current) return; setFlipped(flipped === card.id ? null : card.id); }}><div className="flash-front"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
+    <div className="flashcard-grid">{visibleCards.map((card, index) => <div key={card.id} className="flashcard-item">
+      <div className={`flashcard-wrap ${flipped === card.id ? "flipped" : ""}`}>
+        <button className={`flashcard card-color-${card.color ?? "purple"} ${flipped === card.id ? "flipped" : ""}`} onClick={() => setFlipped(flipped === card.id ? null : card.id)}><div className="flash-front"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
         <button className="card-edit-button" aria-label={`${card.question}を編集`} onClick={() => setEditing(card)}><Settings size={15} /></button>
+        {/* Replaces the old long-press-drag reordering, which turned out to
+            be unreliable on real touch hardware — a plain tap always works
+            the same way everywhere. Disabled rather than hidden at the ends
+            of the list so the button positions never shift around. */}
+        <div className="card-order-buttons">
+          <button className="card-order-button" aria-label="上に移動" disabled={index === 0} onClick={() => moveCard(card.id, "up")}><ChevronUp size={15} /></button>
+          <button className="card-order-button" aria-label="下に移動" disabled={index === visibleCards.length - 1} onClick={() => moveCard(card.id, "down")}><ChevronDown size={15} /></button>
+        </div>
       </div>
       {/* Lives outside the flip card, not on either face, so it stays put
           and tappable no matter which side (question/answer) is showing. */}

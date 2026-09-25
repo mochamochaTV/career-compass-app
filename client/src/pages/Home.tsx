@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { strToU8 } from "fflate";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, BookOpen, BriefcaseBusiness, CalendarDays, Check,
+  ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check,
   ChevronLeft, ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, Pause, Pencil, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Star, Target, Trash2, Trophy, X,
 } from "lucide-react";
@@ -58,11 +58,69 @@ function BottomNav({ screen, onChange }: { screen: Screen; onChange: (s: Screen)
 
 function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[]; schedule: ScheduleItem[]; onNavigate: (s: Screen) => void }) { const pending = schedule.filter((x) => !x.done).slice(0, 2); const cards = load<InterviewCard[]>("cc_cards", starterCards); return <div className="screen home-screen"><Header title="おかえりなさい" eyebrow="CAREER COMPASS" onMenu={() => onNavigate("settings")} /><section className="hero-card"><div><p className="eyebrow light">TODAY'S FOCUS</p><h2>次の一歩を、<br /><em>今日のうちに。</em></h2><p className="hero-copy">企業研究と面接準備を、ここでひとつに。</p></div><div className="hero-orbit"><Target size={34} /><span>準備度<br /><strong>{Math.min(100, companies.length * 12 + 34)}%</strong></span></div></section><div className="section-heading"><div><p className="eyebrow">OVERVIEW</p><h2>就活の現在地</h2></div><button className="text-button" onClick={() => onNavigate("schedule")}>予定を見る <ChevronRight size={16} /></button></div><section className="overview-grid"><div className="stat-card purple"><BriefcaseBusiness size={19} /><strong>{companies.length}</strong><span>研究中の企業</span></div><div className="stat-card orange"><BookOpen size={19} /><strong>{cards.length}</strong><span>面接カード</span></div><div className="stat-card green"><CalendarDays size={19} /><strong>{pending.length}</strong><span>未完了の予定</span></div></section><div className="section-heading"><div><p className="eyebrow">UP NEXT</p><h2>次にやること</h2></div><button className="icon-button" onClick={() => onNavigate("schedule")}><ChevronRight size={18} /></button></div><section className="task-preview">{pending.length ? pending.map((task) => <button className="task-row" key={task.id} onClick={() => onNavigate("schedule")}><span className="task-dot" /><span className="task-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={17} /></button>) : <div className="empty-state"><Check size={20} />すべて完了。いいペースです。</div>}</section><section className="tip-card"><Lightbulb size={20} /><div><strong>続けるコツ</strong><p>企業を調べたら、志望理由を一文だけ書いておくと面接カードに変わります。</p></div></section></div>; }
 
-function ResearchScreen({ companies, setCompanies, onNavigate }: { companies: Company[]; setCompanies: Dispatch<SetStateAction<Company[]>>; onNavigate: (s: Screen) => void }) { const [mode, setMode] = useState<ResearchMode>("research"); const [rank, setRank] = useState<RankMode>("interest"); const [industry, setIndustry] = useState("すべて"); const [query, setQuery] = useState(""); const [newIndustry, setNewIndustry] = useState("ゲーム"); const [selected, setSelected] = useState<Company | null>(null); const industries =["すべて", ...Array.from(new Set(companies.map((c) => c.industry)))]; const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && c.name.toLowerCase().includes(query.toLowerCase())); const sorted = [...filtered].sort((a, b) => rank === "interest" ? b.interest - a.interest : rank === "salary" ? (b.salary ?? -1) - (a.salary ?? -1) : b.benefits.length - a.benefits.length);
+function ResearchScreen({ companies, setCompanies, onNavigate }: { companies: Company[]; setCompanies: Dispatch<SetStateAction<Company[]>>; onNavigate: (s: Screen) => void }) {
+  const [mode, setMode] = useState<ResearchMode>("research");
+  const [rank, setRank] = useState<RankMode>("interest");
+  const [industry, setIndustry] = useState("すべて");
+  const [query, setQuery] = useState("");
+  const [newIndustry, setNewIndustry] = useState("ゲーム");
+  const [selected, setSelected] = useState<Company | null>(null);
+  const industries = ["すべて", ...Array.from(new Set(companies.map((c) => c.industry)))];
+  const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && c.name.toLowerCase().includes(query.toLowerCase()));
+  const sorted = [...filtered].sort((a, b) => rank === "interest" ? b.interest - a.interest : rank === "salary" ? (b.salary ?? -1) - (a.salary ?? -1) : b.benefits.length - a.benefits.length);
+
   const add = () => { const name = query.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, salary: null, benefits: "調査して追記", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today }; setCompanies((current) => [...current, company]); setQuery(""); setSelected(company); toast.success(`${name}を追加しました`); };
   const save = (updated: Company) => { setCompanies((current) => current.map((c) => c.id === updated.id ? { ...updated, updatedAt: today } : c)); setSelected({ ...updated, updatedAt: today }); toast.success("企業情報を保存しました"); };
-  return <div className="screen"><Header title="企業研究" eyebrow="COMPANY RESEARCH" onMenu={() => onNavigate("settings")} /><div className="segmented-tabs research-tabs"><button className={mode === "research" ? "active" : ""} onClick={() => setMode("research")}><Search size={16} />調べる</button><button className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><Trophy size={16} />まとめ</button></div>{mode === "research" ? <><section className="research-intro"><div className="intro-icon"><Sparkles size={22} /></div><div><p className="eyebrow">RESEARCH DESK</p><h2>企業名から、研究メモを始める</h2><p>公式サイト・採用ページなどの参考URLを残しながら、自分の言葉で情報を整理できます。</p></div></section><div className="search-box"><Search size={19} /><input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="企業名を入力（例：任天堂）" /><select value={newIndustry} onChange={(e) => setNewIndustry(e.target.value)}><option>ゲーム</option><option>IT・Web</option><option>メーカー</option><option>商社</option><option>その他</option></select><div className="search-actions"><button className="primary-button" onClick={add}><Plus size={17} />追加</button></div></div><div className="section-heading compact"><div><p className="eyebrow">YOUR LIST</p><h2>追加した企業 <span className="count-badge">{companies.length}</span></h2></div></div><div className="company-list">{companies.map((c) => <button className="company-card" key={c.id} onClick={() => setSelected(c)}><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div></div><ChevronRight size={18} /></button>)}</div></> : <><section className="summary-banner"><div><p className="eyebrow light">SUMMARY BOARD</p><h2>企業を比べて、<br />志望度を整理する</h2><p>ランキングはあなたの入力値から自動で並び替えます。</p></div><Trophy size={54} strokeWidth={1.5} /></section><div className="chip-row">{industries.map((item) => <button key={item} className={`chip ${industry === item ? "selected" : ""}`} onClick={() => setIndustry(item)}>{item}</button>)}</div><div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => setRank("interest")}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => setRank("salary")}><span className="yen-icon">¥</span>年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => setRank("benefits")}><span>＋</span>福利厚生</button></div><div className="ranking-list">{sorted.map((c, i) => <div className="ranking-row" key={c.id}><div className={`rank-number rank-${i + 1}`}>{i + 1}</div><div className="company-avatar small">{c.name.slice(0, 1)}</div><button className="ranking-info" onClick={() => setSelected(c)}><strong>{c.name}</strong><span>{c.industry} · {c.location}</span></button><div className="ranking-value"><small>{rank === "interest" ? "志望度" : rank === "salary" ? "想定年収" : "福利厚生"}</small><strong>{rank === "interest" ? `★ ${c.interest}/5` : rank === "salary" ? money(c.salary) : c.benefits === "情報を追加" ? "未入力" : "登録済み"}</strong></div><div className="rank-actions"><button onClick={() => move(companies, setCompanies, c.id, -1)}><ArrowUp size={15} /></button><button onClick={() => move(companies, setCompanies, c.id, 1)}><ArrowDown size={15} /></button></div></div>)}{!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}</div></>}{selected && <CompanyEditor company={selected} onClose={() => setSelected(null)} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); setSelected(null); toast.success("企業を削除しました"); }} />}</div>; }
-function move(companies: Company[], setCompanies: Dispatch<SetStateAction<Company[]>>, id: string, delta: number) { const index = companies.findIndex((c) => c.id === id); const target = index + delta; if (index < 0 || target < 0 || target >= companies.length) return; const next = [...companies]; [next[index], next[target]] = [next[target], next[index]]; setCompanies(next); }
+
+  // Both the plain list and the ranking board reorder the same underlying
+  // `companies` array — just starting from a different visible subset (the
+  // full list here, the filtered+sorted one there) — so they share one
+  // remap: reorder the ids that are currently visible, leaving any
+  // filtered-out company right where it already was.
+  const reorderCompanies = (visibleIds: string[]) => {
+    const visibleSet = new Set(visibleIds);
+    setCompanies((current) => {
+      const byId = new Map(current.map((c) => [c.id, c]));
+      let cursor = 0;
+      return current.map((c) => (visibleSet.has(c.id) ? byId.get(visibleIds[cursor++])! : c));
+    });
+  };
+  const companyDrag = useDragReorder(".company-card");
+  const rankDrag = useDragReorder(".ranking-row");
+
+  return <div className="screen">
+    <Header title="企業研究" eyebrow="COMPANY RESEARCH" onMenu={() => onNavigate("settings")} />
+    <div className="segmented-tabs research-tabs"><button className={mode === "research" ? "active" : ""} onClick={() => setMode("research")}><Search size={16} />調べる</button><button className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><Trophy size={16} />まとめ</button></div>
+    {mode === "research" ? <>
+      <section className="research-intro"><div className="intro-icon"><Sparkles size={22} /></div><div><p className="eyebrow">RESEARCH DESK</p><h2>企業名から、研究メモを始める</h2><p>公式サイト・採用ページなどの参考URLを残しながら、自分の言葉で情報を整理できます。</p></div></section>
+      <div className="search-box"><Search size={19} /><input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="企業名を入力（例：任天堂）" /><select value={newIndustry} onChange={(e) => setNewIndustry(e.target.value)}><option>ゲーム</option><option>IT・Web</option><option>メーカー</option><option>商社</option><option>その他</option></select><div className="search-actions"><button className="primary-button" onClick={add}><Plus size={17} />追加</button></div></div>
+      <div className="section-heading compact"><div><p className="eyebrow">YOUR LIST</p><h2>追加した企業 <span className="count-badge">{companies.length}</span></h2></div></div>
+      <div className="card-filter"><span>{companies.length} companies</span><span className="hint"><GripVertical size={14} />長押しで並び替え</span></div>
+      <div className="company-list" ref={companyDrag.containerRef} onPointerMove={(event) => companyDrag.move(event, reorderCompanies)} onPointerUp={companyDrag.end} onPointerCancel={companyDrag.end}>
+        {companies.map((c) => <button
+          key={c.id}
+          className={`company-card ${companyDrag.draggingId === c.id ? "dragging" : ""}`}
+          onPointerDown={(event) => companyDrag.start(c.id, event, companies.map((x) => x.id))}
+          onClick={() => { if (companyDrag.justDraggedRef.current) return; setSelected(c); }}
+        ><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div></div><ChevronRight size={18} /></button>)}
+      </div>
+    </> : <>
+      <section className="summary-banner"><div><p className="eyebrow light">SUMMARY BOARD</p><h2>企業を比べて、<br />志望度を整理する</h2><p>ランキングは志望度などから自動で並び替え、長押しで自分の順位に調整できます。</p></div><Trophy size={54} strokeWidth={1.5} /></section>
+      <div className="chip-row">{industries.map((item) => <button key={item} className={`chip ${industry === item ? "selected" : ""}`} onClick={() => setIndustry(item)}>{item}</button>)}</div>
+      <div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => setRank("interest")}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => setRank("salary")}><span className="yen-icon">¥</span>年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => setRank("benefits")}><span>＋</span>福利厚生</button></div>
+      <div className="card-filter"><span className="hint"><GripVertical size={14} />長押しで並び替え</span></div>
+      <div className="ranking-list" ref={rankDrag.containerRef} onPointerMove={(event) => rankDrag.move(event, reorderCompanies)} onPointerUp={rankDrag.end} onPointerCancel={rankDrag.end}>
+        {sorted.map((c, i) => <div
+          key={c.id}
+          className={`ranking-row ${rankDrag.draggingId === c.id ? "dragging" : ""}`}
+          onPointerDown={(event) => rankDrag.start(c.id, event, sorted.map((x) => x.id))}
+        ><div className={`rank-number rank-${i + 1}`}>{i + 1}</div><div className="company-avatar small">{c.name.slice(0, 1)}</div><button className="ranking-info" onClick={() => { if (rankDrag.justDraggedRef.current) return; setSelected(c); }}><strong>{c.name}</strong><span>{c.industry} · {c.location}</span></button><div className="ranking-value"><small>{rank === "interest" ? "志望度" : rank === "salary" ? "想定年収" : "福利厚生"}</small><strong>{rank === "interest" ? `★ ${c.interest}/5` : rank === "salary" ? money(c.salary) : c.benefits === "情報を追加" ? "未入力" : "登録済み"}</strong></div></div>)}
+        {!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}
+      </div>
+    </>}
+    {selected && <CompanyEditor company={selected} onClose={() => setSelected(null)} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); setSelected(null); toast.success("企業を削除しました"); }} />}
+  </div>;
+}
 function CompanyEditor({ company, onClose, onSave, onDelete }: { company: Company; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) { const [draft, setDraft] = useState(company); const update = (key: keyof Company, value: string | number | null | string[]) => setDraft((d) => ({ ...d, [key]: value })); return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">COMPANY NOTE</p><h2>{draft.name}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div><div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<textarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<textarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<textarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<textarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label></div><div className="modal-footer"><button className="danger-button" onClick={onDelete}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>; }
 
 // A single "add / edit interview card" category field: pick from the
@@ -104,6 +162,75 @@ function CategoryPicker({ value, categories, onChange, resetKey }: { value: stri
 // on the category chips themselves (see startCategoryDrag/moveCategoryDrag/
 // endCategoryDrag in InterviewScreen) — this modal is rename-only now.
 const LONG_PRESS_MS = 350;
+
+// Generic long-press-to-drag reordering: press an item to lift it, drag to
+// the slot it should land in. Same mechanics as the interview cards and
+// category chips (see startCardDrag/moveCardDrag/endCardDrag and
+// startCategoryDrag/moveCategoryDrag/endCategoryDrag in InterviewScreen) —
+// pulled into one hook here for the company list and ranking list, which
+// need the identical pattern twice more: pointer capture goes on the STABLE
+// container (never the item itself, which React reorders mid-drag — losing
+// capture on a reparented element would silently strand the drag), and the
+// live order lives in a ref so a fast pointermove never reads a stale array
+// from a not-yet-flushed setState.
+function useDragReorder(itemSelector: string) {
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const dragState = useRef<{ id: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean } | null>(null);
+  const justDraggedRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const orderRef = useRef<string[]>([]);
+
+  const start = (id: string, event: React.PointerEvent, visibleIds: string[]) => {
+    const pointerId = event.pointerId;
+    const timer = setTimeout(() => {
+      if (dragState.current) {
+        dragState.current.dragging = true;
+        justDraggedRef.current = true;
+        orderRef.current = visibleIds;
+        setDraggingId(id);
+        containerRef.current?.setPointerCapture(pointerId);
+      }
+    }, LONG_PRESS_MS);
+    dragState.current = { id, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false };
+  };
+  const move = (event: React.PointerEvent, onReorder: (nextOrder: string[]) => void) => {
+    const state = dragState.current;
+    if (!state) return;
+    const deltaX = event.clientX - state.startX;
+    const deltaY = event.clientY - state.startY;
+    if (!state.dragging) {
+      // A quick swipe (e.g. scrolling the page) cancels the pending
+      // long-press instead of hijacking the gesture.
+      if (Math.hypot(deltaX, deltaY) > 12 && state.timer) { clearTimeout(state.timer); dragState.current = null; }
+      return;
+    }
+    const items = Array.from(containerRef.current?.querySelectorAll<HTMLElement>(itemSelector) ?? []);
+    if (!items.length) return;
+    let closestIndex = -1;
+    let closestDist = Infinity;
+    items.forEach((el, i) => {
+      const rect = el.getBoundingClientRect();
+      const dist = Math.hypot(event.clientX - (rect.left + rect.width / 2), event.clientY - (rect.top + rect.height / 2));
+      if (dist < closestDist) { closestDist = dist; closestIndex = i; }
+    });
+    const order = orderRef.current;
+    const fromIndex = order.indexOf(state.id);
+    if (fromIndex === -1 || closestIndex === -1 || closestIndex === fromIndex) return;
+    const nextOrder = [...order];
+    nextOrder.splice(fromIndex, 1);
+    nextOrder.splice(closestIndex, 0, state.id);
+    orderRef.current = nextOrder;
+    onReorder(nextOrder);
+  };
+  const end = () => {
+    if (dragState.current?.timer) clearTimeout(dragState.current.timer);
+    dragState.current = null;
+    setDraggingId(null);
+    setTimeout(() => { justDraggedRef.current = false; }, 0);
+  };
+  return { draggingId, justDraggedRef, containerRef, start, move, end };
+}
+
 function CategoryManager({ categories, onRename, onClose }: { categories: string[]; onRename: (oldName: string, newName: string) => void; onClose: () => void }) {
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -395,7 +522,7 @@ function InterviewScreen({ cards, setCards, onNavigate, onBack }: { cards: Inter
         className={`flashcard-wrap ${flipped === card.id ? "flipped" : ""} ${draggingCardId === card.id ? "dragging" : ""}`}
         onPointerDown={(event) => startCardDrag(card.id, event)}
       >
-        <button className={`flashcard ${flipped === card.id ? "flipped" : ""}`} onClick={() => { if (justDraggedRef.current) return; setFlipped(flipped === card.id ? null : card.id); }}><div className="flash-front"><span className="card-label">{card.category} · QUESTION</span><h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category} · ANSWER</span><p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
+        <button className={`flashcard ${flipped === card.id ? "flipped" : ""}`} onClick={() => { if (justDraggedRef.current) return; setFlipped(flipped === card.id ? null : card.id); }}><div className="flash-front"><span className="card-label">{card.category}</span><h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category}</span><p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
         <button className="card-edit-button" aria-label={`${card.question}を編集`} onClick={() => setEditing(card)}><Settings size={15} /></button>
       </div>
       {/* Lives outside the flip card, not on either face, so it stays put
@@ -461,7 +588,7 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
         overflowing a box sized for the question. */}
     <div className="quiz-card-stage">
       <button className={`quiz-flashcard ${flipped ? "flipped" : ""}`} onClick={onFlip}>
-        <span className="card-label">{card.category} · {flipped ? "ANSWER" : "QUESTION"}</span>
+        <span className="card-label">{card.category}</span>
         {flipped ? <p className="quiz-face-text">{card.answer}</p> : <h3 className="quiz-face-text">{card.question}</h3>}
         <span className="flip-hint">{flipped ? <>もう一度タップで質問へ <RefreshCw size={15} /></> : <>タップして答えを見る <ChevronRight size={15} /></>}</span>
       </button>

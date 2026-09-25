@@ -222,3 +222,63 @@ body { background: var(--background); color: var(--foreground); }
   .inline-form input, .inline-form textarea, .form-grid input, .form-grid textarea, .form-grid select,
   .search-box input, .search-box select, .category-manager-row input { font-size: 16px; }
 }
+
+/* Company selection-stage tag on the "調べる" list cards, and the "進捗"
+   pipeline board grouping companies by stage (ResearchScreen). */
+.stage-tag { flex: 0 0 auto; padding: 3px 7px; color: #4caa8e; background: #e8f7f1; border-radius: 6px; font-size: 9px; }
+.stage-board { display: grid; gap: 14px; margin-top: 18px; }
+.stage-column { padding: 15px; border: 1px solid #ececf3; border-radius: 16px; background: #fff; }
+.stage-column-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.stage-column-heading h3 { margin: 0; font-size: 13px; }
+.stage-company-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid #f0f0f5; }
+.stage-company-row:first-of-type { border-top: 0; }
+.stage-company-name { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 0; color: inherit; background: transparent; text-align: left; }
+.stage-company-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.stage-company-name span { color: #9999aa; font-size: 10px; }
+.stage-company-row select { flex: 0 0 auto; padding: 6px 8px; color: #6654d9; background: #f7f6fb; border: 1px solid #ececf3; border-radius: 8px; font-size: 10px; }
+
+/* Extra sections inside CompanyEditor: the reflection-log journal and the
+   read-only list of interview cards linked to this company. */
+.editor-section { margin-top: 20px; padding-top: 18px; border-top: 1px solid #ececf3; }
+.editor-section h3 { margin: 0 0 10px; font-size: 13px; }
+.reflection-log-form { display: grid; gap: 8px; margin-bottom: 12px; }
+.reflection-log-form input[type="date"] { max-width: 160px; padding: 9px 10px; color: #313147; background: #fbfbfe; border: 1px solid #e7e6f0; border-radius: 9px; font-size: 12px; }
+.reflection-log-list { display: grid; gap: 8px; }
+.reflection-log-entry { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid #ececf3; border-radius: 12px; background: #fbfbfe; }
+.reflection-log-main { min-width: 0; flex: 1; }
+.reflection-log-main small { color: #9999aa; font-size: 9px; }
+.reflection-log-main p { margin: 4px 0 0; color: #41347f; font-size: 12px; line-height: 1.7; white-space: pre-line; }
+.linked-cards-list { display: grid; gap: 8px; }
+.linked-card-row { padding: 10px 12px; border: 1px solid #ececf3; border-radius: 12px; background: #fbfbfe; }
+.linked-card-row .card-label { color: #8778d9; }
+.linked-card-row p { margin: 4px 0 0; color: #41347f; font-size: 12px; line-height: 1.6; }
+
+/* Company tag shown on an interview card face when it's linked to a
+   specific company (see InterviewScreen's company picker). */
+.card-company-tag { align-self: flex-start; margin-top: 4px; padding: 3px 7px; color: #d5ceff; background: #ffffff26; border-radius: 6px; font-size: 9px; font-weight: 700; }
+.flash-back .card-company-tag { color: #6654d9; background: #f4f2ff; }
+.card-search-box { margin-bottom: 4px; }
+
+/* Weekly practice summary card on the interview mode-choice menu. */
+.practice-stats-card { margin-top: 18px; padding: 18px; border: 1px solid #ececf3; border-radius: 16px; background: #fff; }
+.practice-stats-header { display: flex; align-items: center; gap: 10px; color: #6654d9; }
+.practice-stats-header h3 { margin: 2px 0 0; color: #24243a; font-size: 14px; }
+.practice-stats-count { display: flex; align-items: baseline; gap: 6px; margin: 12px 0 14px; }
+.practice-stats-count strong { color: #6654d9; font-size: 26px; }
+.practice-stats-count span { color: #9999aa; font-size: 11px; }
+.rating-breakdown { display: grid; gap: 6px; }
+.rating-breakdown-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #77778c; }
+.rating-breakdown-row span:nth-child(2) { flex: 1; }
+.rating-breakdown-count { color: #41347f; font-weight: 700; }
+.rating-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: #c7c5d6; }
+.rating-dot.rating-excellent { background: #4caa8e; }
+.rating-dot.rating-good { background: #6bbda7; }
+.rating-dot.rating-fair { background: #e0a53e; }
+.rating-dot.rating-poor { background: #d16464; }
+.rating-dot.rating-none { background: #c7c5d6; }
+.settings-icon.purple { color: #6654d9; background: #efedff; }
+
+@media (max-width: 760px) {
+  .stage-company-row { flex-wrap: wrap; }
+  .stage-company-row select { flex: 1 1 100%; }
+}

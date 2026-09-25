@@ -10,16 +10,28 @@ import { createBackupZip, parseBackupBytes } from "@/lib/backup";
 import { BASE_PATH } from "@/lib/basePath";
 
 type Screen = "home" | "research" | "interview" | "schedule" | "settings";
-type ResearchMode = "research" | "summary";
+type ResearchMode = "research" | "summary" | "progress";
 type RankMode = "interest" | "salary" | "benefits";
-export type Company = { id: string; name: string; industry: string; interest: number; salary: number | null; benefits: string; location: string; philosophy: string; person: string; notes: string; sources: string[]; updatedAt: string };
+// The selection process, in order — used both to render the "進捗" pipeline
+// board (grouped by stage) and to populate the stage picker in
+// CompanyEditor. A company with no stage recorded yet (e.g. restored from an
+// older backup) is treated as "未応募" everywhere (see stageOf()).
+export const COMPANY_STAGES = ["未応募", "エントリー", "ES提出", "一次面接", "二次面接", "最終面接", "内定", "不合格", "辞退"] as const;
+export type CompanyStage = typeof COMPANY_STAGES[number];
+export function stageOf(company: Company): CompanyStage { return company.stage ?? "未応募"; }
+// A single dated journal entry — "面接後の振り返りメモ" — free-form notes the
+// person leaves for themselves after an interview or a stage change.
+export type InterviewLogEntry = { id: string; date: string; note: string };
+export type Company = { id: string; name: string; industry: string; interest: number; salary: number | null; benefits: string; location: string; philosophy: string; person: string; notes: string; sources: string[]; updatedAt: string; stage?: CompanyStage; interviewLogs?: InterviewLogEntry[] };
 export type SelfRating = "excellent" | "good" | "fair" | "poor";
 // A card can be a follow-up on another card (parentId points at it) — e.g.
 // the interviewer's likely next question given a particular answer. Child
 // cards don't get their own place in the grid or category counts; they only
 // show up tucked under their parent, expanded on demand (see
-// InterviewScreen's expandedParents/childrenOf).
-export type InterviewCard = { id: string; question: string; answer: string; category: string; important?: boolean; rating?: SelfRating | null; parentId?: string | null };
+// InterviewScreen's expandedParents/childrenOf). A card can also optionally
+// be linked to a company (companyId) — e.g. "なぜ弊社を志望しますか" tied to
+// the specific company it was written for.
+export type InterviewCard = { id: string; question: string; answer: string; category: string; important?: boolean; rating?: SelfRating | null; parentId?: string | null; companyId?: string | null };
 const RATING_LABEL: Record<SelfRating, string> = { excellent: "優", good: "良", fair: "可", poor: "不可" };
 const RATING_ORDER: SelfRating[] = ["excellent", "good", "fair", "poor"];
 
@@ -28,17 +40,29 @@ const RATING_ORDER: SelfRating[] = ["excellent", "good", "fair", "poor"];
 // persist across visits (see cc_quiz_settings in InterviewHub) so picking
 // "10 questions, 優のみ" once doesn't need re-picking every time.
 type QuizRatingFilter = SelfRating | "none";
-type QuizSettings = { count: number | "all"; ratings: QuizRatingFilter[] };
+type QuizSettings = { count: number | "all"; ratings: QuizRatingFilter[]; weighted: boolean };
+// Higher weight = more likely to be drawn when "苦手優先" is on — poor and
+// unrated cards come up most often, cards already marked 優 come up least.
+const QUIZ_WEIGHT: Record<QuizRatingFilter, number> = { poor: 5, none: 4, fair: 3, good: 2, excellent: 1 };
+function weightedSample<T>(items: T[], weightOf: (item: T) => number, count: number): T[] {
+  // Efraimidis-Spirakis weighted sampling without replacement: give every
+  // item a random key raised to 1/weight, then just take the top N keys —
+  // heavier items tend to land closer to 1 and win more often, but nothing
+  // is guaranteed, so a light item can still come up.
+  const keyed = items.map((item) => ({ item, key: Math.pow(Math.random(), 1 / weightOf(item)) }));
+  keyed.sort((a, b) => b.key - a.key);
+  return keyed.slice(0, count).map((k) => k.item);
+}
 const QUIZ_COUNT_OPTIONS: Array<number | "all"> = [5, 10, 15, 20, "all"];
 const QUIZ_RATING_OPTIONS: Array<{ key: QuizRatingFilter; label: string }> = [...RATING_ORDER.map((r) => ({ key: r as QuizRatingFilter, label: RATING_LABEL[r] })), { key: "none", label: "未評価" }];
-const DEFAULT_QUIZ_SETTINGS: QuizSettings = { count: 10, ratings: QUIZ_RATING_OPTIONS.map((option) => option.key) };
+const DEFAULT_QUIZ_SETTINGS: QuizSettings = { count: 10, ratings: QUIZ_RATING_OPTIONS.map((option) => option.key), weighted: false };
 export type ScheduleItem = { id: string; title: string; date: string; time: string; category: string; done: boolean };
 
 const today = new Date().toISOString().slice(0, 10);
 const starterCompanies: Company[] = [
-  { id: "company-1", name: "任天堂", industry: "ゲーム", interest: 5, salary: null, benefits: "情報を追加", location: "京都・東京", philosophy: "自分で企業理念を追記", person: "求める人物像を追記", notes: "調べる画面から企業情報を追加できます。", sources: ["https://www.nintendo.co.jp/", "https://www.nintendo.co.jp/jobs/"], updatedAt: today },
-  { id: "company-2", name: "カプコン", industry: "ゲーム", interest: 4, salary: null, benefits: "情報を追加", location: "大阪・東京", philosophy: "", person: "", notes: "", sources: ["https://www.capcom.co.jp/", "https://www.capcom.co.jp/recruit/"], updatedAt: today },
-  { id: "company-3", name: "ソニーグループ", industry: "IT・メーカー", interest: 3, salary: null, benefits: "情報を追加", location: "東京ほか", philosophy: "", person: "", notes: "", sources: ["https://www.sony.com/ja/SonyInfo/Jobs/"], updatedAt: today },
+  { id: "company-1", name: "任天堂", industry: "ゲーム", interest: 5, salary: null, benefits: "情報を追加", location: "京都・東京", philosophy: "自分で企業理念を追記", person: "求める人物像を追記", notes: "調べる画面から企業情報を追加できます。", sources: ["https://www.nintendo.co.jp/", "https://www.nintendo.co.jp/jobs/"], updatedAt: today, stage: "エントリー", interviewLogs: [] },
+  { id: "company-2", name: "カプコン", industry: "ゲーム", interest: 4, salary: null, benefits: "情報を追加", location: "大阪・東京", philosophy: "", person: "", notes: "", sources: ["https://www.capcom.co.jp/", "https://www.capcom.co.jp/recruit/"], updatedAt: today, stage: "未応募", interviewLogs: [] },
+  { id: "company-3", name: "ソニーグループ", industry: "IT・メーカー", interest: 3, salary: null, benefits: "情報を追加", location: "東京ほか", philosophy: "", person: "", notes: "", sources: ["https://www.sony.com/ja/SonyInfo/Jobs/"], updatedAt: today, stage: "未応募", interviewLogs: [] },
 ];
 const starterCards: InterviewCard[] = [
   { id: "card-1", category: "基本", question: "自己紹介をしてください", answer: "大学・専攻・経験・志望につながる強みを1分で話す。" },
@@ -63,7 +87,7 @@ function BottomNav({ screen, onChange }: { screen: Screen; onChange: (s: Screen)
 
 function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[]; schedule: ScheduleItem[]; onNavigate: (s: Screen) => void }) { const pending = schedule.filter((x) => !x.done).slice(0, 2); const cards = load<InterviewCard[]>("cc_cards", starterCards); return <div className="screen home-screen"><Header title="おかえりなさい" eyebrow="CAREER COMPASS" onMenu={() => onNavigate("settings")} /><section className="hero-card"><div><p className="eyebrow light">TODAY'S FOCUS</p><h2>次の一歩を、<br /><em>今日のうちに。</em></h2><p className="hero-copy">企業研究と面接準備を、ここでひとつに。</p></div><div className="hero-orbit"><Target size={34} /><span>準備度<br /><strong>{Math.min(100, companies.length * 12 + 34)}%</strong></span></div></section><div className="section-heading"><div><p className="eyebrow">OVERVIEW</p><h2>就活の現在地</h2></div><button className="text-button" onClick={() => onNavigate("schedule")}>予定を見る <ChevronRight size={16} /></button></div><section className="overview-grid"><div className="stat-card purple"><BriefcaseBusiness size={19} /><strong>{companies.length}</strong><span>研究中の企業</span></div><div className="stat-card orange"><BookOpen size={19} /><strong>{cards.length}</strong><span>面接カード</span></div><div className="stat-card green"><CalendarDays size={19} /><strong>{pending.length}</strong><span>未完了の予定</span></div></section><div className="section-heading"><div><p className="eyebrow">UP NEXT</p><h2>次にやること</h2></div><button className="icon-button" onClick={() => onNavigate("schedule")}><ChevronRight size={18} /></button></div><section className="task-preview">{pending.length ? pending.map((task) => <button className="task-row" key={task.id} onClick={() => onNavigate("schedule")}><span className="task-dot" /><span className="task-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={17} /></button>) : <div className="empty-state"><Check size={20} />すべて完了。いいペースです。</div>}</section><section className="tip-card"><Lightbulb size={20} /><div><strong>続けるコツ</strong><p>企業を調べたら、志望理由を一文だけ書いておくと面接カードに変わります。</p></div></section></div>; }
 
-function ResearchScreen({ companies, setCompanies, onNavigate }: { companies: Company[]; setCompanies: Dispatch<SetStateAction<Company[]>>; onNavigate: (s: Screen) => void }) {
+function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { companies: Company[]; setCompanies: Dispatch<SetStateAction<Company[]>>; cards: InterviewCard[]; onNavigate: (s: Screen) => void }) {
   const [mode, setMode] = useState<ResearchMode>("research");
   const [rank, setRank] = useState<RankMode>("interest");
   const [industry, setIndustry] = useState("すべて");
@@ -74,8 +98,9 @@ function ResearchScreen({ companies, setCompanies, onNavigate }: { companies: Co
   const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && c.name.toLowerCase().includes(query.toLowerCase()));
   const sorted = [...filtered].sort((a, b) => rank === "interest" ? b.interest - a.interest : rank === "salary" ? (b.salary ?? -1) - (a.salary ?? -1) : b.benefits.length - a.benefits.length);
 
-  const add = () => { const name = query.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, salary: null, benefits: "調査して追記", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today }; setCompanies((current) => [...current, company]); setQuery(""); setSelected(company); toast.success(`${name}を追加しました`); };
+  const add = () => { const name = query.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, salary: null, benefits: "調査して追記", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [] }; setCompanies((current) => [...current, company]); setQuery(""); setSelected(company); toast.success(`${name}を追加しました`); };
   const save = (updated: Company) => { setCompanies((current) => current.map((c) => c.id === updated.id ? { ...updated, updatedAt: today } : c)); setSelected({ ...updated, updatedAt: today }); toast.success("企業情報を保存しました"); };
+  const updateStage = (id: string, stage: CompanyStage) => setCompanies((current) => current.map((c) => c.id === id ? { ...c, stage, updatedAt: today } : c));
 
   // Both the plain list and the ranking board reorder the same underlying
   // `companies` array — just starting from a different visible subset (the
@@ -95,7 +120,7 @@ function ResearchScreen({ companies, setCompanies, onNavigate }: { companies: Co
 
   return <div className="screen">
     <Header title="企業研究" eyebrow="COMPANY RESEARCH" onMenu={() => onNavigate("settings")} />
-    <div className="segmented-tabs research-tabs"><button className={mode === "research" ? "active" : ""} onClick={() => setMode("research")}><Search size={16} />調べる</button><button className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><Trophy size={16} />まとめ</button></div>
+    <div className="segmented-tabs research-tabs"><button className={mode === "research" ? "active" : ""} onClick={() => setMode("research")}><Search size={16} />調べる</button><button className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><Trophy size={16} />まとめ</button><button className={mode === "progress" ? "active" : ""} onClick={() => setMode("progress")}><Target size={16} />進捗</button></div>
     {mode === "research" ? <>
       <section className="research-intro"><div className="intro-icon"><Sparkles size={22} /></div><div><p className="eyebrow">RESEARCH DESK</p><h2>企業名から、研究メモを始める</h2><p>公式サイト・採用ページなどの参考URLを残しながら、自分の言葉で情報を整理できます。</p></div></section>
       <div className="search-box"><Search size={19} /><input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="企業名を入力（例：任天堂）" /><select value={newIndustry} onChange={(e) => setNewIndustry(e.target.value)}><option>ゲーム</option><option>IT・Web</option><option>メーカー</option><option>商社</option><option>その他</option></select><div className="search-actions"><button className="primary-button" onClick={add}><Plus size={17} />追加</button></div></div>
@@ -107,7 +132,23 @@ function ResearchScreen({ companies, setCompanies, onNavigate }: { companies: Co
           className={`company-card ${companyDrag.draggingId === c.id ? "dragging" : ""}`}
           onPointerDown={(event) => companyDrag.start(c.id, event, companies.map((x) => x.id))}
           onClick={() => { if (companyDrag.justDraggedRef.current) return; setSelected(c); }}
-        ><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div></div><ChevronRight size={18} /></button>)}
+        ><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className="stage-tag">{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div></div><ChevronRight size={18} /></button>)}
+      </div>
+    </> : mode === "progress" ? <>
+      <section className="summary-banner"><div><p className="eyebrow light">PIPELINE</p><h2>選考の進み具合を、<br />ひと目で確認する</h2><p>ステージごとに企業をまとめました。プルダウンから今の状況をすぐ更新できます。</p></div><Target size={54} strokeWidth={1.5} /></section>
+      <div className="stage-board">
+        {COMPANY_STAGES.map((stage) => {
+          const inStage = companies.filter((c) => stageOf(c) === stage);
+          if (!inStage.length) return null;
+          return <div className="stage-column" key={stage}>
+            <div className="stage-column-heading"><h3>{stage}</h3><span className="count-badge">{inStage.length}</span></div>
+            {inStage.map((c) => <div className="stage-company-row" key={c.id}>
+              <button className="stage-company-name" onClick={() => setSelected(c)}><strong>{c.name}</strong><span>{c.industry}</span></button>
+              <select value={stageOf(c)} onChange={(event) => updateStage(c.id, event.target.value as CompanyStage)}>{COMPANY_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+            </div>)}
+          </div>;
+        })}
+        {!companies.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}
       </div>
     </> : <>
       <section className="summary-banner"><div><p className="eyebrow light">SUMMARY BOARD</p><h2>企業を比べて、<br />志望度を整理する</h2><p>ランキングは志望度などから自動で並び替え、長押しで自分の順位に調整できます。</p></div><Trophy size={54} strokeWidth={1.5} /></section>
@@ -123,10 +164,43 @@ function ResearchScreen({ companies, setCompanies, onNavigate }: { companies: Co
         {!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}
       </div>
     </>}
-    {selected && <CompanyEditor company={selected} onClose={() => setSelected(null)} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); setSelected(null); toast.success("企業を削除しました"); }} />}
+    {selected && <CompanyEditor company={selected} cards={cards} onClose={() => setSelected(null)} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); setSelected(null); toast.success("企業を削除しました"); }} />}
   </div>;
 }
-function CompanyEditor({ company, onClose, onSave, onDelete }: { company: Company; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) { const [draft, setDraft] = useState(company); const update = (key: keyof Company, value: string | number | null | string[]) => setDraft((d) => ({ ...d, [key]: value })); return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">COMPANY NOTE</p><h2>{draft.name}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div><div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<textarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<textarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<textarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<textarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label></div><div className="modal-footer"><button className="danger-button" onClick={onDelete}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>; }
+function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company: Company; cards: InterviewCard[]; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) {
+  const [draft, setDraft] = useState(company);
+  const update = (key: keyof Company, value: string | number | null | string[]) => setDraft((d) => ({ ...d, [key]: value }));
+  const [logDraft, setLogDraft] = useState({ date: today, note: "" });
+  const logs = draft.interviewLogs ?? [];
+  const addLog = () => {
+    if (!logDraft.note.trim()) return toast.error("メモを入力してください");
+    const entry: InterviewLogEntry = { id: `log-${Date.now()}`, date: logDraft.date, note: logDraft.note.trim() };
+    setDraft((d) => ({ ...d, interviewLogs: [entry, ...(d.interviewLogs ?? [])] }));
+    setLogDraft({ date: today, note: "" });
+  };
+  const removeLog = (id: string) => setDraft((d) => ({ ...d, interviewLogs: (d.interviewLogs ?? []).filter((l) => l.id !== id) }));
+  // Interview cards written specifically for this company — linked from the
+  // card's own editor (see InterviewScreen's company picker). Shown here
+  // read-only, as a quick "what have I already prepared for them" reminder.
+  const linkedCards = cards.filter((card) => card.companyId === company.id && !card.parentId);
+  return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">COMPANY NOTE</p><h2>{draft.name}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div><div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">選考ステータス<div className="chip-row">{COMPANY_STAGES.map((s) => <button type="button" key={s} className={`chip ${stageOf(draft) === s ? "selected" : ""}`} onClick={() => update("stage", s)}>{s}</button>)}</div></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<textarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<textarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<textarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<textarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label></div>
+    <div className="editor-section">
+      <h3>面接後の振り返りメモ</h3>
+      <div className="reflection-log-form"><input type="date" value={logDraft.date} onChange={(event) => setLogDraft((d) => ({ ...d, date: event.target.value }))} /><AutoGrowTextarea value={logDraft.note} onChange={(event) => setLogDraft((d) => ({ ...d, note: event.target.value }))} placeholder="面接で聞かれたこと、手応え、次に活かしたい点など" /><button type="button" className="secondary-button" onClick={addLog}><Plus size={15} />メモを追加</button></div>
+      <div className="reflection-log-list">
+        {logs.map((entry) => <div className="reflection-log-entry" key={entry.id}><div className="reflection-log-main"><small>{entry.date}</small><p>{entry.note}</p></div><button type="button" className="icon-button" aria-label="メモを削除" onClick={() => removeLog(entry.id)}><Trash2 size={14} /></button></div>)}
+        {!logs.length && <p className="child-empty-hint">まだ振り返りメモがありません。面接の後に、気づいたことを残しておきましょう。</p>}
+      </div>
+    </div>
+    <div className="editor-section">
+      <h3>紐づいている面接カード</h3>
+      <div className="linked-cards-list">
+        {linkedCards.map((card) => <div className="linked-card-row" key={card.id}><span className="card-label">{card.category}</span><p>{card.question}</p></div>)}
+        {!linkedCards.length && <p className="child-empty-hint">面接カードの編集画面から、この企業向けの質問を紐づけられます。</p>}
+      </div>
+    </div>
+    <div className="modal-footer"><button className="danger-button" onClick={onDelete}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>;
+}
 
 // A single "add / edit interview card" category field: pick from the
 // existing categories, or switch to a text input to create a brand new one.
@@ -309,13 +383,15 @@ function InterviewTimer() {
   </div>;
 }
 
-function InterviewScreen({ cards, setCards, onNavigate, onBack }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; onNavigate: (s: Screen) => void; onBack: () => void }) {
+function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; companies: Company[]; onNavigate: (s: Screen) => void; onBack: () => void }) {
   const [flipped, setFlipped] = useState<string | null>(null);
   const [show, setShow] = useState(false);
   const [editing, setEditing] = useState<InterviewCard | null>(null);
   const [category, setCategory] = useState("すべて");
   const [managingCategories, setManagingCategories] = useState(false);
-  const [draft, setDraft] = useState({ question: "", answer: "", category: "基本" });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [draft, setDraft] = useState<{ question: string; answer: string; category: string; companyId: string | null }>({ question: "", answer: "", category: "基本", companyId: null });
+  const companyName = (id: string | null | undefined) => companies.find((c) => c.id === id)?.name;
   // Long-press-to-drag reordering, applied straight to the cards in the
   // grid — press and hold a card, then drag it over the slot it should land
   // in. `justDraggedRef` swallows the click a long-press-and-release
@@ -341,7 +417,13 @@ function InterviewScreen({ cards, setCards, onNavigate, onBack }: { cards: Inter
   // they only appear tucked under their parent, so every list/count here
   // works from the top-level cards only.
   const topLevelCards = cards.filter((card) => !card.parentId);
-  const visibleCards = category === "すべて" ? topLevelCards : topLevelCards.filter((card) => card.category === category);
+  const categoryScoped = category === "すべて" ? topLevelCards : topLevelCards.filter((card) => card.category === category);
+  // Search looks at the question and answer text of the card itself, plus
+  // any of its child (follow-up) cards — a card whose own text doesn't
+  // mention "ゲーム" but whose follow-up answer does should still surface.
+  const trimmedSearch = searchQuery.trim().toLowerCase();
+  const cardMatches = (card: InterviewCard) => `${card.question}${card.answer}`.toLowerCase().includes(trimmedSearch);
+  const visibleCards = trimmedSearch ? categoryScoped.filter((card) => cardMatches(card) || cards.some((child) => child.parentId === card.id && cardMatches(child))) : categoryScoped;
   const childrenOf = (parentId: string) => cards.filter((card) => card.parentId === parentId);
 
   const ensureCategory = (name: string) => {
@@ -365,7 +447,7 @@ function InterviewScreen({ cards, setCards, onNavigate, onBack }: { cards: Inter
     // New cards go to the front, not the back — a card you just wrote about
     // is usually the one you want to see (and keep practicing) first.
     setCards((current) => [{ ...draft, category: finalCategory, id: `card-${Date.now()}` }, ...current]);
-    setDraft({ question: "", answer: "", category: "基本" });
+    setDraft({ question: "", answer: "", category: "基本", companyId: null });
     setShow(false);
     toast.success("面接カードを追加しました");
   };
@@ -538,6 +620,7 @@ function InterviewScreen({ cards, setCards, onNavigate, onBack }: { cards: Inter
     <button className="text-button mode-back-link" onClick={onBack}><ArrowLeft size={15} />選択に戻る</button>
     <InterviewTimer />
     <section className="page-lead"><div><p className="eyebrow">FLIP CARDS</p><h2>タップして、答えを確認</h2><p>カードをタップして回答を確認。鉛筆ボタンから内容もいつでも書き換えられます。</p></div><button className="primary-button" onClick={() => setShow((value) => !value)}><Plus size={17} />カード追加</button></section>
+    <div className="search-box card-search-box"><Search size={19} /><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="質問・答えの内容で検索" />{searchQuery && <button className="icon-button" aria-label="検索をクリア" onClick={() => setSearchQuery("")}><X size={16} /></button>}</div>
     <div className="category-filter" ref={categoryFilterRef} onPointerMove={moveCategoryDrag} onPointerUp={endCategoryDrag} onPointerCancel={endCategoryDrag}><span className="filter-label">カテゴリ</span>{categories.map((item) => item === "すべて"
       ? <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}<small>{topLevelCards.length}</small></button>
       : <button key={item} className={`category-chip ${category === item ? "active" : ""} ${draggingCategory === item ? "dragging" : ""}`} onPointerDown={(event) => startCategoryDrag(item, event)} onClick={() => { if (justDraggedCategoryRef.current) return; setCategory(item); }}>{item}<small>{topLevelCards.filter((card) => card.category === item).length}</small></button>)}<button className="icon-button category-manage-button" aria-label="カテゴリを編集" onClick={() => setManagingCategories(true)}><Settings size={15} /></button></div>
@@ -545,13 +628,13 @@ function InterviewScreen({ cards, setCards, onNavigate, onBack }: { cards: Inter
     {/* Rendered right above the card list (not below it) so opening the form
         with the "カード追加" button up top never requires scrolling past
         every existing card just to start typing. */}
-    {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<CategoryPicker value={draft.category} categories={categoryOrder} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label><label>質問<AutoGrowTextarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<AutoGrowTextarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
+    {show && <div className="inline-form"><div className="form-heading"><div><p className="eyebrow">NEW CARD</p><h3>面接カードを作る</h3></div><button className="icon-button" onClick={() => setShow(false)}><X size={17} /></button></div><label>カテゴリ<CategoryPicker value={draft.category} categories={categoryOrder} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label><label>企業（任意）<select value={draft.companyId ?? ""} onChange={(event) => setDraft({ ...draft, companyId: event.target.value || null })}><option value="">紐づけない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>質問<AutoGrowTextarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} placeholder="例：最近気になったニュースは？" /></label><label>答え<AutoGrowTextarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} placeholder="自分の言葉で答えを記入" /></label><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
     <div className="flashcard-grid" ref={cardGridRef} onPointerMove={moveCardDrag} onPointerUp={endCardDrag} onPointerCancel={endCardDrag}>{visibleCards.map((card) => <div key={card.id} className="flashcard-item">
       <div
         className={`flashcard-wrap ${flipped === card.id ? "flipped" : ""} ${draggingCardId === card.id ? "dragging" : ""}`}
         onPointerDown={(event) => startCardDrag(card.id, event)}
       >
-        <button className={`flashcard ${flipped === card.id ? "flipped" : ""}`} onClick={() => { if (justDraggedRef.current) return; setFlipped(flipped === card.id ? null : card.id); }}><div className="flash-front"><span className="card-label">{card.category}</span><h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category}</span><p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
+        <button className={`flashcard ${flipped === card.id ? "flipped" : ""}`} onClick={() => { if (justDraggedRef.current) return; setFlipped(flipped === card.id ? null : card.id); }}><div className="flash-front"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category}</span>{companyName(card.companyId) && <span className="card-company-tag">{companyName(card.companyId)}</span>}<p>{card.answer}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
         <button className="card-edit-button" aria-label={`${card.question}を編集`} onClick={() => setEditing(card)}><Settings size={15} /></button>
       </div>
       {/* Lives outside the flip card, not on either face, so it stays put
@@ -586,7 +669,7 @@ function InterviewScreen({ cards, setCards, onNavigate, onBack }: { cards: Inter
       </div>}
     </div>)}</div>
     {!visibleCards.length && <div className="empty-state large"><BookOpen size={24} />このカテゴリにはカードがありません。</div>}
-    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>{editing.parentId ? "子カードを編集" : "面接カードを編集"}</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid">{!editing.parentId && <label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label>}<label className="wide">質問<AutoGrowTextarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<AutoGrowTextarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { setCards((current) => current.filter((card) => card.id !== editing.id && card.parentId !== editing.id)); setEditing(null); toast.success(editing.parentId ? "子カードを削除しました" : "面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
+    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">EDIT CARD</p><h2>{editing.parentId ? "子カードを編集" : "面接カードを編集"}</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid">{!editing.parentId && <label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label>}{!editing.parentId && <label className="wide">企業（任意）<select value={editing.companyId ?? ""} onChange={(event) => setEditing({ ...editing, companyId: event.target.value || null })}><option value="">紐づけない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}<label className="wide">質問<AutoGrowTextarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<AutoGrowTextarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { setCards((current) => current.filter((card) => card.id !== editing.id && card.parentId !== editing.id)); setEditing(null); toast.success(editing.parentId ? "子カードを削除しました" : "面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
     {managingCategories && <CategoryManager categories={categoryOrder} onRename={renameCategory} onClose={() => setManagingCategories(false)} />}
   </div>;
 }
@@ -618,6 +701,14 @@ function QuizSetupScreen({ cards, settings, setSettings, onNavigate, onBack, onS
         <h3>出題する評価</h3>
         <p>選んだ評価が付いたカードだけが出題対象になります。</p>
         <div className="chip-row">{QUIZ_RATING_OPTIONS.map(({ key, label }) => <button key={key} className={`chip ${settings.ratings.includes(key) ? "selected" : ""}`} onClick={() => toggleRating(key)}>{label}</button>)}</div>
+      </div>
+    </div>
+    <div className="settings-card">
+      <div className="settings-icon purple"><Trophy size={20} /></div>
+      <div>
+        <h3>出題の優先度</h3>
+        <p>オンにすると、不得意（不可・可）や未評価のカードほど優先的に出題されます。</p>
+        <div className="chip-row"><button className={`chip ${settings.weighted ? "selected" : ""}`} onClick={() => setSettings((current) => ({ ...current, weighted: !current.weighted }))}>{settings.weighted ? "苦手なカードを優先中" : "苦手なカードを優先する"}</button></div>
       </div>
     </div>
     <p className={`quiz-pool-hint ${poolCount ? "" : "warn"}`}>{poolCount ? `対象カード：${poolCount}枚` : "対象のカードがありません。評価の選択を見直してください。"}</p>
@@ -670,12 +761,17 @@ function SettingsScreen({ onNavigate, onUpdateApp }: { onNavigate: (s: Screen) =
 // before, or "問題" to practice one card at a time in a random order. Which
 // of the three sub-screens is showing lives only here, not in the app-wide
 // Screen type, so switching tabs and coming back always starts at this menu.
-function InterviewHub({ cards, setCards, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; onNavigate: (s: Screen) => void }) {
+function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; companies: Company[]; onNavigate: (s: Screen) => void }) {
   const [subScreen, setSubScreen] = useState<"menu" | "cards" | "quiz-setup" | "quiz-play">("menu");
   const [quizSettings, setQuizSettings] = usePersisted<QuizSettings>("cc_quiz_settings", DEFAULT_QUIZ_SETTINGS);
   const [quizDeck, setQuizDeck] = useState<InterviewCard[]>([]);
   const [quizIndex, setQuizIndex] = useState(0);
   const [quizFlipped, setQuizFlipped] = useState(false);
+  // Every quiz-answer-viewed timestamp, capped so it can't grow forever —
+  // this is the raw log the "週間の練習実績" card on the menu screen
+  // summarizes (see weeklyCount below).
+  const [practiceLog, setPracticeLog] = usePersisted<string[]>("cc_practice_log", []);
+  const recordPractice = () => setPracticeLog((current) => [...current.slice(-499), new Date().toISOString()]);
   const backToMenu = () => setSubScreen("menu");
   // Child (follow-up) cards stay attached to their parent's context, so the
   // quiz — which shows one card at a time with nothing else around it —
@@ -685,14 +781,17 @@ function InterviewHub({ cards, setCards, onNavigate }: { cards: InterviewCard[];
   const startQuiz = () => {
     const pool = topLevelCards.filter((card) => quizSettings.ratings.includes((card.rating ?? "none") as QuizRatingFilter));
     if (!pool.length) return toast.error("対象のカードがありません。設定を見直してください");
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    const count = quizSettings.count === "all" ? shuffled.length : Math.min(quizSettings.count, shuffled.length);
-    setQuizDeck(shuffled.slice(0, count));
+    const count = quizSettings.count === "all" ? pool.length : Math.min(quizSettings.count, pool.length);
+    const deck = quizSettings.weighted
+      ? weightedSample(pool, (card) => QUIZ_WEIGHT[(card.rating ?? "none") as QuizRatingFilter], count)
+      : [...pool].sort(() => Math.random() - 0.5).slice(0, count);
+    setQuizDeck(deck);
     setQuizIndex(0);
     setQuizFlipped(false);
     setSubScreen("quiz-play");
   };
   const quizNext = () => {
+    recordPractice();
     if (quizIndex >= quizDeck.length - 1) {
       toast.success("全問終了しました。お疲れ様でした！");
       setSubScreen("menu");
@@ -706,13 +805,25 @@ function InterviewHub({ cards, setCards, onNavigate }: { cards: InterviewCard[];
     setQuizIndex((i) => Math.max(0, i - 1));
   };
 
-  if (subScreen === "cards") return <InterviewScreen cards={cards} setCards={setCards} onNavigate={onNavigate} onBack={backToMenu} />;
+  if (subScreen === "cards") return <InterviewScreen cards={cards} setCards={setCards} companies={companies} onNavigate={onNavigate} onBack={backToMenu} />;
   if (subScreen === "quiz-setup") return <QuizSetupScreen cards={topLevelCards} settings={quizSettings} setSettings={setQuizSettings} onNavigate={onNavigate} onBack={backToMenu} onStart={startQuiz} />;
   if (subScreen === "quiz-play") return <QuizPlayScreen deck={quizDeck} index={quizIndex} flipped={quizFlipped} onFlip={() => setQuizFlipped((f) => !f)} onPrev={quizPrev} onNext={quizNext} onNavigate={onNavigate} onBack={backToMenu} />;
+
+  const weekAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const weeklyCount = practiceLog.filter((iso) => new Date(iso).getTime() >= weekAgoMs).length;
+  const ratingBreakdown: Array<{ key: QuizRatingFilter; label: string; count: number }> = [
+    ...RATING_ORDER.map((r) => ({ key: r as QuizRatingFilter, label: RATING_LABEL[r], count: topLevelCards.filter((c) => c.rating === r).length })),
+    { key: "none", label: "未評価", count: topLevelCards.filter((c) => !c.rating).length },
+  ];
 
   return <div className="screen">
     <Header title="面接準備" eyebrow="INTERVIEW PREP" onMenu={() => onNavigate("settings")} />
     <section className="page-lead"><div><p className="eyebrow">CHOOSE MODE</p><h2>どちらで練習しますか？</h2><p>カードを管理する「面接カード」か、1問ずつランダムに出す「問題」を選べます。</p></div></section>
+    <section className="practice-stats-card">
+      <div className="practice-stats-header"><Trophy size={18} /><div><p className="eyebrow">THIS WEEK</p><h3>週間の練習実績</h3></div></div>
+      <div className="practice-stats-count"><strong>{weeklyCount}</strong><span>問を練習しました</span></div>
+      <div className="rating-breakdown">{ratingBreakdown.map(({ key, label, count }) => <div className="rating-breakdown-row" key={key}><span className={`rating-dot rating-${key}`} /><span>{label}</span><span className="rating-breakdown-count">{count}</span></div>)}</div>
+    </section>
     <div className="mode-choice-grid">
       <button className="mode-choice-card" onClick={() => setSubScreen("cards")}>
         <div className="mode-choice-icon"><BookOpen size={22} /></div>
@@ -789,5 +900,5 @@ export default function Home() {
     }).catch(() => toast.error("更新の確認に失敗しました。通信状態を確認してください"));
   };
 
-  return <div className="app-shell"><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} onNavigate={setScreen} />}{screen === "interview" && <InterviewHub cards={cards} setCards={setCards} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
+  return <div className="app-shell"><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} cards={cards} onNavigate={setScreen} />}{screen === "interview" && <InterviewHub cards={cards} setCards={setCards} companies={companies} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
 }

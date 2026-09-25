@@ -126,7 +126,13 @@ body { background: var(--background); color: var(--foreground); }
 /* Keep transient messages above the mobile navigation so they never block controls. */
 [data-sonner-toaster][data-position="bottom-center"], [data-sonner-toaster][data-position="bottom-right"], [data-sonner-toaster][data-position="bottom-left"] { bottom: 94px !important; }
 .category-filter { display: flex; align-items: center; gap: 7px; overflow-x: auto; margin: 8px 0 13px; padding-bottom: 3px; }
-.filter-label { flex: 0 0 auto; color: #9a9aab; font-size: 10px; font-weight: 700; }
+/* Pressing this label wraps every chip onto as many rows as it takes
+   instead of one long scrolling row — much faster to scan once a person has
+   more than a handful of categories. */
+.category-filter.expanded { flex-wrap: wrap; overflow-x: visible; }
+.category-filter .filter-label-button { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; padding: 0; color: #9a9aab; background: transparent; border: 0; font-size: 10px; font-weight: 700; }
+.filter-label-button svg { transition: transform .2s ease; }
+.filter-label-button svg.rotated { transform: rotate(180deg); }
 .category-filter button { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 7px 10px; color: #858597; background: #fff; border: 1px solid #ececf3; border-radius: 9px; font-size: 10px; }
 .category-filter button.active { color: #fff; background: #6654d9; border-color: #6654d9; }
 .category-filter small { min-width: 15px; padding: 2px 4px; border-radius: 5px; background: #f0eff6; font-size: 9px; }
@@ -170,14 +176,23 @@ body { background: var(--background); color: var(--foreground); }
 .child-toggle { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 7px 10px; color: #858597; background: #f7f6fb; border-radius: 8px; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .child-toggle.active { color: #fff; background: #6654d9; }
 .child-card-panel { display: grid; gap: 10px; margin-top: -2px; padding: 14px; border: 1px dashed #e0ddf0; border-radius: 14px; background: #fbfaff; }
+/* A follow-up card and, recursively, its own follow-up panel (see
+   ChildCardView) — indented per nesting level via an inline margin-left so a
+   multi-level thread still reads top-to-bottom as a hierarchy. */
+.child-card-node { min-width: 0; }
 .child-card { display: flex; align-items: flex-start; gap: 8px; }
-.child-card-main { min-width: 0; flex: 1; display: grid; gap: 6px; }
-.child-line { margin: 0; padding: 8px 10px; border-radius: 10px; font-size: 12px; line-height: 1.6; white-space: pre-line; }
-.child-role { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 5px; font-size: 9px; font-weight: 800; vertical-align: 1px; }
-.child-question { color: #41347f; background: #eeeaff; }
-.child-question .child-role { color: #6654d9; background: #fff; }
-.child-answer { color: #4a4a5c; background: #f4f4f8; }
-.child-answer .child-role { color: #6b9c8a; background: #fff; }
+.child-flashcard { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; color: #41347f; background: #eeeaff; border-radius: 12px; text-align: left; }
+.child-flashcard.flipped { color: #2c5a4d; background: #eaf6f1; }
+.child-role { display: inline-block; align-self: flex-start; padding: 1px 6px; border-radius: 5px; color: #6654d9; background: #fff; font-size: 9px; font-weight: 800; }
+.child-flashcard.flipped .child-role { color: #4caa8e; }
+.child-face-text { margin: 0; font-size: 12px; line-height: 1.6; white-space: pre-line; }
+.child-flashcard .flip-hint { display: flex; align-items: center; gap: 4px; color: #8a80c9; font-size: 9px; }
+.child-flashcard.flipped .flip-hint { color: #6fa696; }
+.child-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; }
+.star-toggle.small { width: 24px; height: 24px; }
+.child-toggle.small { padding: 5px 8px; font-size: 9px; }
+.rating-group.small button { padding: 5px 7px; font-size: 9px; }
+.child-card-panel.nested { margin-top: 8px; padding: 10px; }
 .child-empty-hint { margin: 0; color: #9999aa; font-size: 11px; line-height: 1.7; }
 .child-add-button { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; color: #6654d9; background: #fff; border: 1px dashed #cfc7f5; border-radius: 10px; font-size: 11px; font-weight: 700; }
 .child-add-button:hover { background: #f4f2ff; }

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { strToU8 } from "fflate";
 import {
   ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check,
-  ChevronLeft, ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Pause, Pencil, Play, Plus,
-  RefreshCw, RotateCcw, Search, Settings, Sparkles, Star, Target, Trash2, Trophy, X,
+  ChevronLeft, ChevronRight, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Mic, Pause, Pencil, Play, Plus,
+  RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createBackupZip, parseBackupBytes } from "@/lib/backup";
@@ -718,6 +718,68 @@ function QuizSetupScreen({ cards, settings, setSettings, onNavigate, onBack, onS
 
 function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNavigate, onBack }: { deck: InterviewCard[]; index: number; flipped: boolean; onFlip: () => void; onPrev: () => void; onNext: () => void; onNavigate: (s: Screen) => void; onBack: () => void }) {
   const card = deck[index];
+
+  // A scratch recording of the person's own spoken answer, so they can
+  // immediately play it back and hear themselves the way an interviewer
+  // would. Deliberately session-only — never written to localStorage or
+  // included in a backup — since it's a rehearsal aid for the card in
+  // front of them right now, not something to keep. The blob URL is
+  // mirrored into a ref (recordingUrlRef) purely so the cleanup effect
+  // below can always read the LATEST url when it fires, instead of the
+  // stale value it would otherwise close over from whichever render last
+  // changed `index`.
+  const [recordingState, setRecordingState] = useState<"idle" | "recording" | "ready">("idle");
+  const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
+  const recordingUrlRef = useRef<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  useEffect(() => { recordingUrlRef.current = recordingUrl; }, [recordingUrl]);
+
+  const discardRecording = () => {
+    if (recordingUrlRef.current) URL.revokeObjectURL(recordingUrlRef.current);
+    recordingUrlRef.current = null;
+    setRecordingUrl(null);
+    setRecordingState("idle");
+  };
+  // Moving to a different card (next/prev) discards whatever was recorded
+  // for the previous one, stopping an in-progress recording too — nothing
+  // here is meant to survive past the card it was made for.
+  useEffect(() => {
+    setRecordingUrl(null);
+    setRecordingState("idle");
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop();
+      if (recordingUrlRef.current) URL.revokeObjectURL(recordingUrlRef.current);
+      recordingUrlRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index]);
+
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) return toast.error("この端末では録音機能が使えません");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size > 0) chunksRef.current.push(event.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        if (recordingUrlRef.current) URL.revokeObjectURL(recordingUrlRef.current);
+        const url = URL.createObjectURL(blob);
+        recordingUrlRef.current = url;
+        setRecordingUrl(url);
+        setRecordingState("ready");
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecordingState("recording");
+    } catch {
+      toast.error("マイクを使用できませんでした。ブラウザの権限設定を確認してください");
+    }
+  };
+  const stopRecording = () => mediaRecorderRef.current?.stop();
+
   if (!card) return null;
   const isLast = index === deck.length - 1;
   return <div className="screen quiz-screen">
@@ -736,6 +798,19 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
         {flipped ? <p className="quiz-face-text">{card.answer}</p> : <h3 className="quiz-face-text">{card.question}</h3>}
         <span className="flip-hint">{flipped ? <>もう一度タップで質問へ <RefreshCw size={15} /></> : <>タップして答えを見る <ChevronRight size={15} /></>}</span>
       </button>
+    </div>
+    {/* Record-and-play-back is intentionally its own control, separate from
+        the timer/flip card — it's fine to record while still looking at
+        the question, before flipping to check the model answer. */}
+    <div className="quiz-recorder">
+      <div className="quiz-recorder-header"><Mic size={14} /><span>自分の回答を録音して聞き返す</span></div>
+      <div className="quiz-recorder-controls">
+        {recordingState === "recording"
+          ? <button className="danger-button" onClick={stopRecording}><Square size={13} fill="currentColor" />録音を止める</button>
+          : <button className="secondary-button" onClick={startRecording}><Mic size={14} />{recordingUrl ? "録音し直す" : "録音を始める"}</button>}
+        {recordingState === "recording" && <span className="quiz-recorder-live">● 録音中…</span>}
+      </div>
+      {recordingUrl && recordingState !== "recording" && <div className="quiz-recorder-playback"><audio controls src={recordingUrl} /><button className="icon-button" aria-label="録音を削除" onClick={discardRecording}><Trash2 size={14} /></button></div>}
     </div>
     {/* Sticky to the bottom corners so "次へ/前へ" are always in thumb reach
         without scrolling, even on a long answer. */}

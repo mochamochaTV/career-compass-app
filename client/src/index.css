@@ -163,6 +163,27 @@ body { background: var(--background); color: var(--foreground); }
 .rating-good.active { color: #fff; background: #6bbda7; }
 .rating-fair.active { color: #fff; background: #e0a53e; }
 .rating-poor.active { color: #fff; background: #d16464; }
+/* Follow-up "child" cards for a given interview card — tucked away behind
+   the child-toggle button in the footer, shown as a small Q&A thread rather
+   than another flip tile, since they're meant to be a quick glance, not a
+   separate practice card in their own right. */
+.child-toggle { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 7px 10px; color: #858597; background: #f7f6fb; border-radius: 8px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.child-toggle.active { color: #fff; background: #6654d9; }
+.child-card-panel { display: grid; gap: 10px; margin-top: -2px; padding: 14px; border: 1px dashed #e0ddf0; border-radius: 14px; background: #fbfaff; }
+.child-card { display: flex; align-items: flex-start; gap: 8px; }
+.child-card-main { min-width: 0; flex: 1; display: grid; gap: 6px; }
+.child-line { margin: 0; padding: 8px 10px; border-radius: 10px; font-size: 12px; line-height: 1.6; white-space: pre-line; }
+.child-role { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 5px; font-size: 9px; font-weight: 800; vertical-align: 1px; }
+.child-question { color: #41347f; background: #eeeaff; }
+.child-question .child-role { color: #6654d9; background: #fff; }
+.child-answer { color: #4a4a5c; background: #f4f4f8; }
+.child-answer .child-role { color: #6b9c8a; background: #fff; }
+.child-empty-hint { margin: 0; color: #9999aa; font-size: 11px; line-height: 1.7; }
+.child-add-button { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; color: #6654d9; background: #fff; border: 1px dashed #cfc7f5; border-radius: 10px; font-size: 11px; font-weight: 700; }
+.child-add-button:hover { background: #f4f2ff; }
+.child-add-form { display: grid; gap: 8px; }
+.child-add-form textarea.autogrow { width: 100%; padding: 9px 10px; color: #313147; background: #fff; border: 1px solid #e7e6f0; border-radius: 9px; font-size: 12px; }
+.child-add-actions { display: flex; justify-content: flex-end; gap: 8px; }
 /* Sticks to the top-right of the interview screen as it scrolls (see
    InterviewTimer) — starts in normal flow just under the header, then
    pins itself once you scroll past it, so it stays visible while

@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { strToU8 } from "fflate";
 import {
   AlertCircle, ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, FileDown, FileUp, GripVertical, Home as HomeIcon, Lightbulb, Menu, MessageSquare, Mic, Moon, Pause, Pencil, Play, Plus,
-  RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Target, Trash2, Trophy, X,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, GripVertical, Home as HomeIcon, Lightbulb, Link2, Menu, MessageSquare, Mic, Moon, Pause, Pencil, Play, Plus,
+  RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Tag, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createBackupZip, parseBackupBytes } from "@/lib/backup";
+import { encodeShare, type SharedCompanySnapshot } from "@/lib/share";
 import { BASE_PATH } from "@/lib/basePath";
 import { useTheme } from "@/contexts/ThemeContext";
 
@@ -32,7 +33,7 @@ export const STAGE_TONE: Record<CompanyStage, "neutral" | "info" | "progress" | 
 // A single dated journal entry — "面接後の振り返りメモ" — free-form notes the
 // person leaves for themselves after an interview or a stage change.
 export type InterviewLogEntry = { id: string; date: string; note: string };
-export type Company = { id: string; name: string; industry: string; interest: number; salary: number | null; benefits: string; location: string; philosophy: string; person: string; notes: string; sources: string[]; updatedAt: string; stage?: CompanyStage; interviewLogs?: InterviewLogEntry[] };
+export type Company = { id: string; name: string; industry: string; interest: number; salary: number | null; benefits: string; location: string; philosophy: string; person: string; notes: string; sources: string[]; updatedAt: string; stage?: CompanyStage; interviewLogs?: InterviewLogEntry[]; tags?: string[] };
 export type SelfRating = "excellent" | "good" | "fair" | "poor";
 // Top-level cards can be recolored (see CardColorPicker) so a long list of
 // otherwise-identical purple tiles is easier to tell apart at a glance —
@@ -75,6 +76,11 @@ const QUIZ_RATING_OPTIONS: Array<{ key: QuizRatingFilter; label: string }> = [..
 const DEFAULT_QUIZ_SETTINGS: QuizSettings = { count: 10, ratings: QUIZ_RATING_OPTIONS.map((option) => option.key), weighted: false };
 export type ScheduleItem = { id: string; title: string; date: string; time: string; category: string; done: boolean };
 
+// A named, reusable chunk of self-PR / ガクチカ text — written once, then
+// pasted into whichever company's ES or interview prep needs it, instead of
+// re-typing (or hunting through old notes for) the same story every time.
+export type PitchTemplate = { id: string; title: string; body: string; updatedAt: string };
+
 // UI text size, applied app-wide as a CSS zoom on the whole shell (see Home())
 // rather than rewriting every literal px font-size in index.css to a
 // calc()'d variable — the app's type scale is almost entirely fixed px, so a
@@ -105,10 +111,77 @@ type CloudPayload = { companies?: Company[]; cards?: InterviewCard[]; schedule?:
 function load<T>(key: string, fallback: T): T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; } }
 function usePersisted<T>(key: string, initial: T) { const [value, setValue] = useState<T>(() => load(key, initial)); useEffect(() => localStorage.setItem(key, JSON.stringify(value)), [key, value]); return [value, setValue] as const; }
 function money(value: number | null) { return value ? `${value.toLocaleString()}万円` : "未入力"; }
+// A handful of horizontally-scrolling rows (stage picker, category filter,
+// tab bars) can silently clip choices off the right edge with nothing on
+// screen to suggest there's more — measured rather than assumed, since
+// whether a given row overflows depends on how many chips/tabs it ends up
+// with. Re-checks on scroll/resize so the hint disappears once you've
+// scrolled to the end.
+function useEdgeScrollHint<T extends HTMLElement>(deps: readonly unknown[], existingRef?: RefObject<T | null>) {
+  const ownRef = useRef<T>(null);
+  const ref = existingRef ?? ownRef;
+  const [hint, setHint] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setHint(el.scrollWidth - el.clientWidth > 4 && el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+    update();
+    el.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    return () => { el.removeEventListener("scroll", update); window.removeEventListener("resize", update); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return { ref, hint };
+}
 
 function Header({ title, eyebrow, onMenu }: { title: string; eyebrow?: string; onMenu: () => void }) { return <header className="topbar"><button className="icon-button mobile-only" onClick={onMenu}><Menu size={20} /></button><div><p className="eyebrow">{eyebrow ?? "マイ就活"}</p><h1>{title}</h1></div><button className="icon-button" onClick={() => toast("入力内容は自動保存されています")}><Check size={18} /></button></header>; }
 function Logo() { return <div className="brand-mark"><div className="brand-symbol"><Target size={20} /></div><div><p className="brand-name">Career Compass</p><p className="brand-sub">就活を、迷わず進める。</p></div></div>; }
 function BottomNav({ screen, onChange }: { screen: Screen; onChange: (s: Screen) => void }) { const items: Array<{ id: Screen; label: string; Icon: typeof HomeIcon }> = [{ id: "interview", label: "面接", Icon: BookOpen }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "home", label: "ホーム", Icon: HomeIcon }, { id: "schedule", label: "予定", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }]; return <nav className="bottom-nav">{items.map(({ id, label, Icon }) => <button key={id} className={`nav-item ${screen === id ? "active" : ""}`} onClick={() => onChange(id)}><Icon size={21} /><span>{label}</span></button>)}</nav>; }
+
+// Promotes adding the PWA to the home screen — shown only on the ホーム tab,
+// and only when there's actually something to do about it: Android/Chrome
+// fires `beforeinstallprompt` when it's ready to offer the native install
+// flow, so the banner waits for that event rather than showing a button that
+// would silently do nothing. iOS Safari never fires that event at all (no
+// programmatic install API exists there), so it gets its own banner with
+// manual "use the share sheet" instructions instead. Dismissing either one
+// persists — this is a one-time nudge, not something to repeat every visit.
+function InstallBanner() {
+  const [dismissed, setDismissed] = usePersisted<boolean>("cc_install_banner_dismissed", false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [isStandalone, setIsStandalone] = useState(true);
+  const [isIOS, setIsIOS] = useState(false);
+
+  useEffect(() => {
+    setIsStandalone(window.matchMedia?.("(display-mode: standalone)").matches || (navigator as any).standalone === true); // eslint-disable-line @typescript-eslint/no-explicit-any
+    setIsIOS(/iphone|ipad|ipod/i.test(navigator.userAgent));
+    const onBeforeInstall = (event: Event) => {
+      event.preventDefault();
+      setDeferredPrompt(event);
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    return () => window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+  }, []);
+
+  const install = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await Promise.resolve(deferredPrompt.userChoice).catch(() => undefined);
+    setDeferredPrompt(null);
+    setDismissed(true);
+  };
+
+  if (isStandalone || dismissed || (!deferredPrompt && !isIOS)) return null;
+  return <section className="install-banner">
+    <div className="install-banner-icon"><Download size={18} /></div>
+    <div className="install-banner-text">
+      <strong>ホーム画面に追加</strong>
+      <p>{deferredPrompt ? "アプリのように、すぐ開けるようになります。" : "共有メニューから「ホーム画面に追加」を選ぶと、アプリのように使えます。"}</p>
+    </div>
+    {deferredPrompt && <button className="secondary-button" onClick={install}>追加する</button>}
+    <button className="icon-button" aria-label="バナーを閉じる" onClick={() => setDismissed(true)}><X size={16} /></button>
+  </section>;
+}
 
 function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[]; schedule: ScheduleItem[]; onNavigate: (s: Screen) => void }) {
   const pending = schedule.filter((x) => !x.done).slice(0, 2);
@@ -133,7 +206,7 @@ function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[];
     .slice(0, 2);
   const hasAttention = upcoming.length > 0 || stalledCompanies.length > 0;
 
-  return <div className="screen home-screen"><Header title="おかえりなさい" eyebrow="ホーム" onMenu={() => onNavigate("settings")} /><section className="hero-card"><div><p className="eyebrow light">今日のポイント</p><h2>次の一歩を、<br /><em>今日のうちに。</em></h2><p className="hero-copy">企業研究と面接準備を、ここでひとつに。</p></div><div className="hero-orbit"><Target size={34} /><span>準備度<br /><strong>{Math.min(100, companies.length * 12 + 34)}%</strong></span></div></section>
+  return <div className="screen home-screen"><Header title="おかえりなさい" eyebrow="ホーム" onMenu={() => onNavigate("settings")} /><InstallBanner /><section className="hero-card"><div><p className="eyebrow light">今日のポイント</p><h2>次の一歩を、<br /><em>今日のうちに。</em></h2><p className="hero-copy">企業研究と面接準備を、ここでひとつに。</p></div><div className="hero-orbit"><Target size={34} /><span>準備度<br /><strong>{Math.min(100, companies.length * 12 + 34)}%</strong></span></div></section>
     {hasAttention && <section className="attention-card">
       <div className="attention-header"><AlertCircle size={15} /><span>注目</span></div>
       {/* An icon per row (not just a colored dot) so the reason something is
@@ -147,6 +220,9 @@ function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[];
 
 function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { companies: Company[]; setCompanies: Dispatch<SetStateAction<Company[]>>; cards: InterviewCard[]; onNavigate: (s: Screen) => void }) {
   const [mode, setMode] = useState<ResearchMode>("research");
+  // Same reasoning as the top-level screen switch (see Home()) — 調べる/
+  // まとめ/進捗 swap in the same scroll container.
+  useEffect(() => { window.scrollTo(0, 0); }, [mode]);
   const [rank, setRank] = useState<RankMode>("interest");
   const [industry, setIndustry] = useState("すべて");
   // Kept separate from newCompanyName below — one text field used to double
@@ -159,8 +235,13 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newIndustry, setNewIndustry] = useState("ゲーム");
   const [selected, setSelected] = useState<Company | null>(null);
+  // Free-form tags (see CompanyEditor's タグ field) are an orthogonal axis to
+  // 業界 — "大手/ベンチャー", "リモート可" etc. don't fit the industry
+  // dropdown, so they get their own filter row rather than being folded in.
+  const [tagFilter, setTagFilter] = useState("すべて");
   const industries = ["すべて", ...Array.from(new Set(companies.map((c) => c.industry)))];
-  const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const allTags = Array.from(new Set(companies.flatMap((c) => c.tags ?? [])));
+  const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && (tagFilter === "すべて" || (c.tags ?? []).includes(tagFilter)) && c.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const sorted = [...filtered].sort((a, b) => rank === "interest" ? b.interest - a.interest : rank === "salary" ? (b.salary ?? -1) - (a.salary ?? -1) : b.benefits.length - a.benefits.length);
 
   const add = () => { const name = newCompanyName.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, salary: null, benefits: "調査して追記", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [] }; setCompanies((current) => [...current, company]); setNewCompanyName(""); setSelected(company); toast.success(`${name}を追加しました`); };
@@ -195,18 +276,46 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
       </div>
       <div className="section-heading compact"><div><p className="eyebrow">企業一覧</p><h2>追加した企業 <span className="count-badge">{companies.length}</span></h2></div></div>
       <div className="search-box"><Search size={19} /><input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="企業名で絞り込み" />{searchQuery && <button className="icon-button" aria-label="絞り込みをクリア" onClick={() => setSearchQuery("")}><X size={16} /></button>}</div>
-      <div className="card-filter"><span>{searchQuery ? `${filtered.length} / ${companies.length}社` : `${companies.length}社`}</span><span className="hint"><GripVertical size={14} />長押しで並び替え</span></div>
+      {/* Hidden until at least one company actually has a tag — an empty
+          "すべて" chip row with nothing to filter would just be noise. */}
+      {allTags.length > 0 && <div className="chip-row">{["すべて", ...allTags].map((item) => <button key={item} className={`chip ${tagFilter === item ? "selected" : ""}`} onClick={() => setTagFilter(item)}>{item === "すべて" ? item : `#${item}`}</button>)}</div>}
+      <div className="card-filter"><span>{searchQuery || tagFilter !== "すべて" ? `${filtered.length} / ${companies.length}社` : `${companies.length}社`}</span><span className="hint"><GripVertical size={14} />長押しで並び替え</span></div>
       <div className="company-list" ref={companyDrag.containerRef} onPointerMove={(event) => companyDrag.move(event, reorderCompanies)} onPointerUp={companyDrag.end} onPointerCancel={companyDrag.end}>
         {filtered.map((c) => <button
           key={c.id}
           className={`company-card ${companyDrag.draggingId === c.id ? "dragging" : ""}`}
           onPointerDown={(event) => companyDrag.start(c.id, event, filtered.map((x) => x.id))}
           onClick={() => { if (companyDrag.justDraggedRef.current) return; setSelected(c); }}
-        ><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className={`stage-tag stage-tag-${STAGE_TONE[stageOf(c)]}`}>{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div></div><ChevronRight size={18} /></button>)}
+        ><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className={`stage-tag stage-tag-${STAGE_TONE[stageOf(c)]}`}>{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div>{c.tags && c.tags.length > 0 && <div className="tag-chip-row">{c.tags.map((tag) => <span key={tag} className="tag-chip-plain">#{tag}</span>)}</div>}</div><ChevronRight size={18} /></button>)}
         {!filtered.length && <div className="empty-state large"><Search size={24} />「{searchQuery}」に一致する企業がありません。</div>}
       </div>
     </> : mode === "progress" ? <>
       <section className="summary-banner"><div><p className="eyebrow light">選考の流れ</p><h2>選考の進み具合を、<br />ひと目で確認する</h2><p>ステージごとに企業をまとめました。プルダウンから今の状況をすぐ更新できます。</p></div><Target size={54} strokeWidth={1.5} /></section>
+      {/* A distribution of CURRENT stages, not a true conversion funnel — the
+          app only ever stores each company's present stage, not the history
+          of stages it passed through, so there's no reliable way to compute
+          a stage-to-stage drop-off rate. This still answers the question
+          people actually ask day to day: "where does my pipeline sit right
+          now, at a glance?" 不合格・辞退 are excluded from the bars (they'd
+          read as a stage you progress INTO, which they aren't) and surfaced
+          as a separate count underneath instead. */}
+      {companies.length > 0 && (() => {
+        const funnelStages = COMPANY_STAGES.filter((s) => s !== "不合格" && s !== "辞退");
+        const funnelCounts = funnelStages.map((stage) => companies.filter((c) => stageOf(c) === stage).length);
+        const maxCount = Math.max(1, ...funnelCounts);
+        const closedCount = companies.length - funnelCounts.reduce((a, b) => a + b, 0);
+        return <section className="funnel-card">
+          <div className="funnel-card-heading"><p className="eyebrow">選考の内訳</p><h3>今、各ステージに何社いるか</h3></div>
+          <div className="funnel-chart">
+            {funnelStages.map((stage, i) => <div className="funnel-row" key={stage}>
+              <span className="funnel-label">{stage}</span>
+              <div className="funnel-track"><div className={`funnel-fill funnel-tone-${STAGE_TONE[stage]}`} style={{ width: `${funnelCounts[i] ? Math.max((funnelCounts[i] / maxCount) * 100, 6) : 0}%` }} /></div>
+              <span className="funnel-count">{funnelCounts[i]}</span>
+            </div>)}
+          </div>
+          {closedCount > 0 && <p className="funnel-closed-note">不合格・辞退：{closedCount}社（内訳には含めていません）</p>}
+        </section>;
+      })()}
       <div className="stage-board">
         {COMPANY_STAGES.map((stage) => {
           const inStage = companies.filter((c) => stageOf(c) === stage);
@@ -245,6 +354,10 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
   // one long wall of fields. Splitting it into tabs means only one section's
   // worth of controls is visible at a time.
   const [tab, setTab] = useState<"basic" | "progress" | "cards">("basic");
+  // The stage row only exists in the DOM once the 進捗・メモ tab is actually
+  // shown, so re-measure whenever `tab` changes rather than just once on
+  // mount (when this element isn't rendered yet).
+  const stageHint = useEdgeScrollHint<HTMLDivElement>([tab]);
   const update = (key: keyof Company, value: string | number | null | string[]) => setDraft((d) => ({ ...d, [key]: value }));
   const [logDraft, setLogDraft] = useState({ date: today, note: "" });
   const logs = draft.interviewLogs ?? [];
@@ -259,19 +372,46 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
   // card's own editor (see InterviewScreen's company picker). Shown here
   // read-only, as a quick "what have I already prepared for them" reminder.
   const linkedCards = cards.filter((card) => card.companyId === company.id && !card.parentId);
-  return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">企業メモ</p><h2>{draft.name}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div>
-    <div className="segmented-tabs editor-tabs">
+  const tabsHint = useEdgeScrollHint<HTMLDivElement>([logs.length, linkedCards.length]);
+  // Shares only the "public-facing research" fields of whatever is currently
+  // in the draft (so an unsaved edit is reflected), never 自分のメモ or
+  // 振り返りメモ — see lib/share.ts for why those stay out entirely.
+  const shareLink = async () => {
+    const snapshot: SharedCompanySnapshot = {
+      v: 1,
+      name: draft.name,
+      industry: draft.industry,
+      interest: draft.interest,
+      salary: draft.salary,
+      location: draft.location,
+      philosophy: draft.philosophy,
+      person: draft.person,
+      sources: draft.sources,
+      stage: stageOf(draft),
+      tags: draft.tags,
+      sharedAt: new Date().toISOString(),
+    };
+    const url = `${window.location.origin}${BASE_PATH}/#share=${encodeShare(snapshot)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("共有リンクをコピーしました（自分のメモは含まれません）");
+    } catch {
+      window.prompt("このリンクをコピーしてください（自分のメモは含まれません）", url);
+    }
+  };
+  return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">企業メモ</p><h2>{draft.name}</h2></div><button className="icon-button" aria-label="閲覧専用リンクを共有" title="閲覧専用リンクを共有" onClick={shareLink}><Link2 size={17} /></button><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={19} /></button></div>
+    <div className="tab-scroll-wrap"><div className="segmented-tabs editor-tabs" ref={tabsHint.ref}>
       <button className={tab === "basic" ? "active" : ""} onClick={() => setTab("basic")}>基本情報</button>
       <button className={tab === "progress" ? "active" : ""} onClick={() => setTab("progress")}>進捗・メモ{logs.length > 0 && <small>{logs.length}</small>}</button>
       <button className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>紐づくカード{linkedCards.length > 0 && <small>{linkedCards.length}</small>}</button>
-    </div>
-    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<textarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<textarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<textarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<textarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label></div>}
+    </div>{tabsHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
+    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<textarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<textarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<textarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<textarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label><label className="wide">タグ<TagEditor tags={draft.tags ?? []} onChange={(tags) => update("tags", tags)} /></label></div>}
     {tab === "progress" && <>
       {/* Colored the same way as the stage-tag it produces on the company
           list (STAGE_TONE) — a solid fill of that tone instead of the
           generic purple every other selected chip gets, so the color's
           meaning is learned right where the stage is actually picked. */}
-      <div className="form-grid"><label className="wide">選考ステータス<div className="chip-row">{COMPANY_STAGES.map((s) => <button type="button" key={s} className={`chip chip-tone-${STAGE_TONE[s]} ${stageOf(draft) === s ? "selected" : ""}`} onClick={() => update("stage", s)}>{s}</button>)}</div></label></div>
+      <div className="form-grid"><label className="wide">選考ステータス<div className="chip-row-wrap"><div className="chip-row" ref={stageHint.ref}>{COMPANY_STAGES.map((s) => <button type="button" key={s} className={`chip chip-tone-${STAGE_TONE[s]} ${stageOf(draft) === s ? "selected" : ""}`} onClick={() => update("stage", s)}>{s}</button>)}</div>{stageHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div></label></div>
       <div className="editor-section flush">
         <h3>面接後の振り返りメモ</h3>
         <div className="reflection-log-form"><input type="date" value={logDraft.date} onChange={(event) => setLogDraft((d) => ({ ...d, date: event.target.value }))} /><AutoGrowTextarea value={logDraft.note} onChange={(event) => setLogDraft((d) => ({ ...d, note: event.target.value }))} placeholder="面接で聞かれたこと、手応え、次に活かしたい点など" /><button type="button" className="secondary-button" onClick={addLog}><Plus size={15} />メモを追加</button></div>
@@ -288,7 +428,29 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
         {!linkedCards.length && <p className="child-empty-hint">面接カードの編集画面から、この企業向けの質問を紐づけられます。</p>}
       </div>
     </div>}
-    <div className="modal-footer"><button className="danger-button" onClick={onDelete}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>;
+    <div className="modal-footer"><button className="danger-button" onClick={() => { if (window.confirm(`「${draft.name}」を削除しますか？この操作は取り消せません。`)) onDelete(); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>;
+}
+
+// Free-form tags for a company (see ResearchScreen's tag filter row) — unlike
+// 業界, which is a single value picked from a fixed set of existing entries,
+// a company can carry any number of these, and they're typed fresh rather
+// than chosen from a dropdown ("大手", "リモート可", whatever the person
+// actually wants to track).
+function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+  const [input, setInput] = useState("");
+  const addTag = () => {
+    const value = input.trim();
+    if (!value || tags.includes(value)) return setInput("");
+    onChange([...tags, value]);
+    setInput("");
+  };
+  return <div className="tag-editor">
+    <div className="chip-row tag-chip-row">
+      {tags.map((tag) => <span key={tag} className="tag-chip">#{tag}<button type="button" aria-label={`${tag}を削除`} onClick={() => onChange(tags.filter((t) => t !== tag))}><X size={11} /></button></span>)}
+      {!tags.length && <span className="tag-empty-hint">まだタグがありません</span>}
+    </div>
+    <div className="tag-editor-input"><input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }} placeholder="例：大手、リモート可" /><button type="button" className="secondary-button" onClick={addTag}><Plus size={14} />追加</button></div>
+  </div>;
 }
 
 // A single "add / edit interview card" category field: pick from the
@@ -306,8 +468,24 @@ function AutoGrowTextarea({ value, className, ...rest }: React.TextareaHTMLAttri
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Resetting to "auto" first (needed so the box can shrink again after
+    // text is deleted, not just grow) briefly collapses it to its smallest
+    // natural size. If that happens while an ancestor — the page itself, or
+    // a scrollable modal — is scrolled down, the browser clamps that
+    // ancestor's scroll position to fit the now-shorter content, and
+    // growing the box back afterward doesn't undo the clamp: every
+    // keystroke was visibly yanking the view back to the top. Saving and
+    // restoring each scrollable ancestor's position around the resize
+    // keeps the autosize invisible, the way it was meant to be.
+    const scrollers: { node: HTMLElement; top: number }[] = [];
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      if (node.scrollHeight > node.clientHeight) scrollers.push({ node, top: node.scrollTop });
+    }
+    const windowY = window.scrollY;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
+    for (const { node, top } of scrollers) node.scrollTop = top;
+    window.scrollTo(window.scrollX, windowY);
   }, [value]);
   return <textarea ref={ref} value={value} className={`autogrow ${className ?? ""}`.trim()} {...rest} />;
 }
@@ -700,6 +878,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
   const categoryDragState = useRef<{ name: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean; el: HTMLElement } | null>(null);
   const justDraggedCategoryRef = useRef(false);
   const categoryFilterRef = useRef<HTMLDivElement>(null);
+  const categoryFilterHint = useEdgeScrollHint<HTMLDivElement>([categories.length, categoriesExpanded], categoryFilterRef);
   const categoryOrderDragRef = useRef<string[]>([]);
   const startCategoryDrag = (name: string, event: React.PointerEvent<HTMLButtonElement>) => {
     const pointerId = event.pointerId;
@@ -758,9 +937,9 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
     <InterviewTimer />
     <section className="page-lead"><div><p className="eyebrow">フラッシュカード</p><h2>タップして、答えを確認</h2><p>カードをタップして回答を確認。鉛筆ボタンから内容もいつでも書き換えられます。</p></div><button className="primary-button" onClick={() => setShow((value) => !value)}><Plus size={17} />カード追加</button></section>
     <div className="search-box card-search-box"><Search size={19} /><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="質問・答えの内容で検索" />{searchQuery && <button className="icon-button" aria-label="検索をクリア" onClick={() => setSearchQuery("")}><X size={16} /></button>}</div>
-    <div className={`category-filter ${categoriesExpanded ? "expanded" : ""}`} ref={categoryFilterRef} onPointerMove={moveCategoryDrag} onPointerUp={endCategoryDrag} onPointerCancel={endCategoryDrag}><button type="button" className="filter-label-button" onClick={() => setCategoriesExpanded((value) => !value)}>カテゴリ<ChevronDown size={13} className={categoriesExpanded ? "rotated" : ""} /></button>{categories.map((item) => item === "すべて"
+    <div className="chip-row-wrap"><div className={`category-filter ${categoriesExpanded ? "expanded" : ""}`} ref={categoryFilterRef} onPointerMove={moveCategoryDrag} onPointerUp={endCategoryDrag} onPointerCancel={endCategoryDrag}><button type="button" className="filter-label-button" onClick={() => setCategoriesExpanded((value) => !value)}>カテゴリ<ChevronDown size={13} className={categoriesExpanded ? "rotated" : ""} /></button>{categories.map((item) => item === "すべて"
       ? <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}<small>{topLevelCards.length}</small></button>
-      : <button key={item} className={`category-chip ${category === item ? "active" : ""} ${draggingCategory === item ? "dragging" : ""}`} onPointerDown={(event) => startCategoryDrag(item, event)} onClick={() => { if (justDraggedCategoryRef.current) return; setCategory(item); }}>{item}<small>{topLevelCards.filter((card) => card.category === item).length}</small></button>)}<button className="icon-button category-manage-button" aria-label="カテゴリを編集" onClick={() => setManagingCategories(true)}><Settings size={15} /></button></div>
+      : <button key={item} className={`category-chip ${category === item ? "active" : ""} ${draggingCategory === item ? "dragging" : ""}`} onPointerDown={(event) => startCategoryDrag(item, event)} onClick={() => { if (justDraggedCategoryRef.current) return; setCategory(item); }}>{item}<small>{topLevelCards.filter((card) => card.category === item).length}</small></button>)}<button className="icon-button category-manage-button" aria-label="カテゴリを編集" onClick={() => setManagingCategories(true)}><Settings size={15} /></button></div>{categoryFilterHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
     <div className="card-filter"><span>{visibleCards.length}枚</span><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span><span className="hint"><RefreshCw size={14} />表と裏をタップで切替</span></div>
     {/* Rendered right above the card list (not below it) so opening the form
         with the "カード追加" button up top never requires scrolling past
@@ -812,12 +991,13 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
       </div>}
     </div>)}</div>
     {!visibleCards.length && <div className="empty-state large"><BookOpen size={24} />このカテゴリにはカードがありません。</div>}
-    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">カード編集</p><h2>{editing.parentId ? "子カードを編集" : "面接カードを編集"}</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid">{!editing.parentId && <label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label>}{!editing.parentId && <label className="wide">企業（任意）<select value={editing.companyId ?? ""} onChange={(event) => setEditing({ ...editing, companyId: event.target.value || null })}><option value="">紐づけない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}{!editing.parentId && <label className="wide">カードの色<CardColorPicker value={editing.color ?? "purple"} onChange={(color) => setEditing({ ...editing, color })} /></label>}<label className="wide">質問<AutoGrowTextarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<AutoGrowTextarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { const idsToRemove = new Set([editing.id, ...collectDescendantIds(cards, editing.id)]); setCards((current) => current.filter((card) => !idsToRemove.has(card.id))); setEditing(null); toast.success(editing.parentId ? "子カードを削除しました" : "面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
+    {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><section className="editor-modal card-editor-modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">カード編集</p><h2>{editing.parentId ? "子カードを編集" : "面接カードを編集"}</h2></div><button className="icon-button" onClick={() => setEditing(null)}><X size={19} /></button></div><div className="form-grid">{!editing.parentId && <label className="wide">カテゴリ<CategoryPicker value={editing.category} categories={categoryOrder} onChange={(value) => setEditing({ ...editing, category: value })} resetKey={editing.id} /></label>}{!editing.parentId && <label className="wide">企業（任意）<select value={editing.companyId ?? ""} onChange={(event) => setEditing({ ...editing, companyId: event.target.value || null })}><option value="">紐づけない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}{!editing.parentId && <label className="wide">カードの色<CardColorPicker value={editing.color ?? "purple"} onChange={(color) => setEditing({ ...editing, color })} /></label>}<label className="wide">質問<AutoGrowTextarea value={editing.question} onChange={(event) => setEditing({ ...editing, question: event.target.value })} /></label><label className="wide">答え<AutoGrowTextarea value={editing.answer} onChange={(event) => setEditing({ ...editing, answer: event.target.value })} /></label></div><div className="modal-footer"><button className="danger-button" onClick={() => { const descendantIds = collectDescendantIds(cards, editing.id); const warning = descendantIds.length ? `このカードには子カードが${descendantIds.length}枚あります。一緒に削除されます。` : "このカードを削除しますか？"; if (!window.confirm(`${warning}\nこの操作は取り消せません。`)) return; const idsToRemove = new Set([editing.id, ...descendantIds]); setCards((current) => current.filter((card) => !idsToRemove.has(card.id))); setEditing(null); toast.success(editing.parentId ? "子カードを削除しました" : "面接カードを削除しました"); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={() => setEditing(null)}>キャンセル</button><button className="primary-button" onClick={saveEdit}><Check size={16} />更新する</button></div></div></section></div>}
     {managingCategories && <CategoryManager categories={categoryOrder} onRename={renameCategory} onClose={() => setManagingCategories(false)} />}
   </div>;
 }
 
 function QuizSetupScreen({ cards, settings, setSettings, onNavigate, onBack, onStart }: { cards: InterviewCard[]; settings: QuizSettings; setSettings: Dispatch<SetStateAction<QuizSettings>>; onNavigate: (s: Screen) => void; onBack: () => void; onStart: () => void }) {
+  const countHint = useEdgeScrollHint<HTMLDivElement>([]);
   const poolCount = cards.filter((card) => settings.ratings.includes((card.rating ?? "none") as QuizRatingFilter)).length;
   // A rating chip can be turned off, but never the last one — an empty
   // filter would just mean "no cards ever match", which is never useful.
@@ -835,7 +1015,7 @@ function QuizSetupScreen({ cards, settings, setSettings, onNavigate, onBack, onS
       <div>
         <h3>問題数</h3>
         <p>選んだ枚数を、ランダムな順番で1問ずつ出題します。</p>
-        <div className="chip-row">{QUIZ_COUNT_OPTIONS.map((option) => <button key={option} className={`chip ${settings.count === option ? "selected" : ""}`} onClick={() => setSettings((current) => ({ ...current, count: option }))}>{option === "all" ? "すべて" : `${option}問`}</button>)}</div>
+        <div className="chip-row-wrap"><div className="chip-row" ref={countHint.ref}>{QUIZ_COUNT_OPTIONS.map((option) => <button key={option} className={`chip ${settings.count === option ? "selected" : ""}`} onClick={() => setSettings((current) => ({ ...current, count: option }))}>{option === "all" ? "すべて" : `${option}問`}</button>)}</div>{countHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
       </div>
     </div>
     <div className="settings-card">
@@ -878,11 +1058,22 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
   const chunksRef = useRef<BlobPart[]>([]);
   useEffect(() => { recordingUrlRef.current = recordingUrl; }, [recordingUrl]);
 
+  // Best-effort live transcription layered on top of the recording above,
+  // via the (non-standard, so untyped in lib.dom) Web Speech API. It's a
+  // second, independent capture running alongside MediaRecorder — not a
+  // transcript OF the audio file — so on a browser that doesn't implement
+  // it (anything non-Chromium, notably Safari/iOS) recording still works
+  // exactly as before, just without text underneath.
+  const speechSupported = typeof window !== "undefined" && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [transcript, setTranscript] = useState("");
+  const recognitionRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+
   const discardRecording = () => {
     if (recordingUrlRef.current) URL.revokeObjectURL(recordingUrlRef.current);
     recordingUrlRef.current = null;
     setRecordingUrl(null);
     setRecordingState("idle");
+    setTranscript("");
   };
   // Moving to a different card (next/prev) discards whatever was recorded
   // for the previous one, stopping an in-progress recording too — nothing
@@ -890,8 +1081,10 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
   useEffect(() => {
     setRecordingUrl(null);
     setRecordingState("idle");
+    setTranscript("");
     return () => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop();
+      if (recognitionRef.current) recognitionRef.current.stop();
       if (recordingUrlRef.current) URL.revokeObjectURL(recordingUrlRef.current);
       recordingUrlRef.current = null;
     };
@@ -917,11 +1110,40 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
       mediaRecorderRef.current = recorder;
       recorder.start();
       setRecordingState("recording");
+      setTranscript("");
+      if (speechSupported) {
+        // Started alongside, not derived from, the MediaRecorder above — two
+        // separate consumers of the same microphone permission. A failure
+        // here (unsupported browser, no network, permission race) is caught
+        // and swallowed rather than surfaced, since the recording itself —
+        // the part people actually asked for first — must keep working
+        // either way.
+        try {
+          const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition; // eslint-disable-line @typescript-eslint/no-explicit-any
+          const recognition = new SpeechRecognitionCtor();
+          recognition.lang = "ja-JP";
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.onresult = (event: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+            let combined = "";
+            for (let i = 0; i < event.results.length; i++) combined += event.results[i][0].transcript;
+            setTranscript(combined);
+          };
+          recognition.onerror = () => undefined;
+          recognitionRef.current = recognition;
+          recognition.start();
+        } catch {
+          recognitionRef.current = null;
+        }
+      }
     } catch {
       toast.error("マイクを使用できませんでした。ブラウザの権限設定を確認してください");
     }
   };
-  const stopRecording = () => mediaRecorderRef.current?.stop();
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    recognitionRef.current?.stop();
+  };
 
   if (!card) return null;
   const isLast = index === deck.length - 1;
@@ -954,6 +1176,9 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
         {recordingState === "recording" && <span className="quiz-recorder-live">● 録音中…</span>}
       </div>
       {recordingUrl && recordingState !== "recording" && <div className="quiz-recorder-playback"><audio controls src={recordingUrl} /><button className="icon-button" aria-label="録音を削除" onClick={discardRecording}><Trash2 size={14} /></button></div>}
+      {speechSupported
+        ? (transcript || recordingState === "recording") && <div className="quiz-transcript"><p className="quiz-transcript-label"><FileText size={12} />自動文字起こし（完全でない場合があります）</p><p className="quiz-transcript-text">{transcript || "話し始めると、ここに表示されます…"}</p></div>
+        : recordingState !== "idle" && <p className="quiz-transcript-hint">このブラウザは自動文字起こしに対応していません（Chromeなどでご利用ください）</p>}
     </div>
     {/* Sticky to the bottom corners so "次へ/前へ" are always in thumb reach
         without scrolling, even on a long answer. */}
@@ -993,7 +1218,10 @@ function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { 
 // of the three sub-screens is showing lives only here, not in the app-wide
 // Screen type, so switching tabs and coming back always starts at this menu.
 function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; companies: Company[]; onNavigate: (s: Screen) => void }) {
-  const [subScreen, setSubScreen] = useState<"menu" | "cards" | "quiz-setup" | "quiz-play">("menu");
+  const [subScreen, setSubScreen] = useState<"menu" | "cards" | "quiz-setup" | "quiz-play" | "templates">("menu");
+  // Same reasoning as the top-level screen switch (see Home()) — this hub
+  // has its own nested navigation between 面接カード/問題 sub-screens.
+  useEffect(() => { window.scrollTo(0, 0); }, [subScreen]);
   const [quizSettings, setQuizSettings] = usePersisted<QuizSettings>("cc_quiz_settings", DEFAULT_QUIZ_SETTINGS);
   const [quizDeck, setQuizDeck] = useState<InterviewCard[]>([]);
   const [quizIndex, setQuizIndex] = useState(0);
@@ -1039,6 +1267,7 @@ function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: Inter
   if (subScreen === "cards") return <InterviewScreen cards={cards} setCards={setCards} companies={companies} onNavigate={onNavigate} onBack={backToMenu} />;
   if (subScreen === "quiz-setup") return <QuizSetupScreen cards={topLevelCards} settings={quizSettings} setSettings={setQuizSettings} onNavigate={onNavigate} onBack={backToMenu} onStart={startQuiz} />;
   if (subScreen === "quiz-play") return <QuizPlayScreen deck={quizDeck} index={quizIndex} flipped={quizFlipped} onFlip={() => setQuizFlipped((f) => !f)} onPrev={quizPrev} onNext={quizNext} onNavigate={onNavigate} onBack={backToMenu} />;
+  if (subScreen === "templates") return <TemplateScreen onNavigate={onNavigate} onBack={backToMenu} />;
 
   const weekAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weeklyCount = practiceLog.filter((iso) => new Date(iso).getTime() >= weekAgoMs).length;
@@ -1081,12 +1310,85 @@ function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: Inter
         <div><h3>問題</h3><p>1問ずつランダムに出題して練習する</p></div>
         <ChevronRight size={18} />
       </button>
+      <button className="mode-choice-card" onClick={() => setSubScreen("templates")}>
+        <div className="mode-choice-icon green"><FileText size={22} /></div>
+        <div><h3>自己PR・ガクチカ</h3><p>使い回すテンプレを書いて、いつでもコピーする</p></div>
+        <ChevronRight size={18} />
+      </button>
+    </div>
+  </div>;
+}
+
+// 自己PR・ガクチカは面接カードの1問1答と違い、企業ごとに少し言い回しを変え
+// つつ何度もコピペし直す「まとまった文章」なので、質問カードとは別に、
+// タイトル付きのテンプレとして保存・複製できるようにしている。
+function TemplateScreen({ onNavigate, onBack }: { onNavigate: (s: Screen) => void; onBack: () => void }) {
+  const [templates, setTemplates] = usePersisted<PitchTemplate[]>("cc_pitch_templates", []);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ title: "", body: "" });
+  const [show, setShow] = useState(false);
+
+  const startNew = () => { setEditingId(null); setDraft({ title: "", body: "" }); setShow(true); };
+  const startEdit = (template: PitchTemplate) => { setEditingId(template.id); setDraft({ title: template.title, body: template.body }); setShow(true); };
+  const cancel = () => { setShow(false); setEditingId(null); setDraft({ title: "", body: "" }); };
+  const save = () => {
+    if (!draft.title.trim() || !draft.body.trim()) return toast.error("タイトルと本文を入力してください");
+    const now = new Date().toISOString();
+    if (editingId) {
+      setTemplates((current) => current.map((t) => (t.id === editingId ? { ...t, title: draft.title.trim(), body: draft.body, updatedAt: now } : t)));
+      toast.success("テンプレを更新しました");
+    } else {
+      setTemplates((current) => [{ id: `pitch-${Date.now()}`, title: draft.title.trim(), body: draft.body, updatedAt: now }, ...current]);
+      toast.success("テンプレを追加しました");
+    }
+    cancel();
+  };
+  const remove = (id: string) => { if (!window.confirm("このテンプレを削除しますか？この操作は取り消せません。")) return; setTemplates((current) => current.filter((t) => t.id !== id)); toast.success("テンプレを削除しました"); };
+  const copy = async (template: PitchTemplate) => {
+    try {
+      await navigator.clipboard.writeText(template.body);
+      toast.success("本文をコピーしました");
+    } catch {
+      window.prompt("このテキストをコピーしてください", template.body);
+    }
+  };
+
+  return <div className="screen">
+    <Header title="自己PR・ガクチカ" eyebrow="面接対策" onMenu={() => onNavigate("settings")} />
+    <button className="text-button mode-back-link" onClick={onBack}><ArrowLeft size={15} />選択に戻る</button>
+    <section className="page-lead"><div><p className="eyebrow">テンプレ管理</p><h2>書き回す文章を、ここに残しておく</h2><p>自己PRやガクチカを一度書いておけば、ES・面接カード・企業ごとの言い回し調整のたびにコピーして使えます。</p></div></section>
+    {!show && <button className="primary-button full-width" onClick={startNew}><Plus size={17} />新しいテンプレを作成</button>}
+    {show && <div className="inline-form">
+      <div className="form-grid">
+        <label className="wide">タイトル<input value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} placeholder="例：自己PR（強み：粘り強さ）" /></label>
+        <label className="wide">本文<AutoGrowTextarea value={draft.body} onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))} placeholder="自己PR・ガクチカの本文を入力" /></label>
+      </div>
+      <div className="child-add-actions"><button className="secondary-button" onClick={cancel}>キャンセル</button><button className="primary-button" onClick={save}><Check size={16} />{editingId ? "更新する" : "保存する"}</button></div>
+    </div>}
+    <div className="template-list">
+      {templates.map((template) => <div className="template-card" key={template.id}>
+        <div className="template-card-header"><h3>{template.title}</h3><span className="template-updated">{new Date(template.updatedAt).toLocaleDateString("ja-JP")}更新</span></div>
+        <p className="template-body-preview">{template.body}</p>
+        <div className="template-card-actions">
+          <button className="secondary-button" onClick={() => copy(template)}><Copy size={14} />コピー</button>
+          <button className="secondary-button" onClick={() => startEdit(template)}><Pencil size={14} />編集</button>
+          <button className="icon-button" aria-label={`${template.title}を削除`} onClick={() => remove(template.id)}><Trash2 size={15} /></button>
+        </div>
+      </div>)}
+      {!templates.length && !show && <div className="empty-state large"><FileText size={24} />まだテンプレがありません。自己PRやガクチカを書いて残しておきましょう。</div>}
     </div>
   </div>;
 }
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("home");
+  // This is one continuous page (no real route change), so the browser has
+  // no reason to reset scroll on its own when the bottom nav swaps screens —
+  // without this, switching tabs while scrolled down on the previous screen
+  // drops the new one in mid-scroll, which is disorienting and can even make
+  // a sticky element (like the interview timer) render over content that
+  // assumed a scroll-to-top start.
+  useEffect(() => { window.scrollTo(0, 0); }, [screen]);
   const [companies, setCompanies] = usePersisted<Company[]>("cc_companies", starterCompanies);
   const [cards, setCards] = usePersisted<InterviewCard[]>("cc_cards", starterCards);
   const [schedule, setSchedule] = usePersisted<ScheduleItem[]>("cc_schedule", starterSchedule);

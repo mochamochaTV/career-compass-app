@@ -60,7 +60,11 @@ button:active { transform: scale(.98); }
 .task-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: #7664dc; box-shadow: 0 0 0 5px #eeeaff; }.task-content { min-width: 0; flex: 1; }.task-content strong, .task-content small { display: block; }.task-content strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.task-content small { margin-top: 4px; color: #a1a1af; font-size: 10px; }
 .empty-state { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 82px; color: #9292a3; font-size: 12px; }.empty-state.large { min-height: 180px; border: 1px dashed #deddea; border-radius: 18px; }
 .tip-card { display: flex; gap: 13px; margin-top: 18px; padding: 17px 19px; border-radius: 16px; color: #6857d0; background: #f0edff; }.tip-card strong { font-size: 12px; }.tip-card p { margin: 4px 0 0; color: #777099; font-size: 11px; line-height: 1.7; }
-.segmented-tabs { display: flex; width: fit-content; gap: 4px; padding: 4px; background: #ecebf4; border-radius: 12px; }.segmented-tabs button { display: flex; align-items: center; gap: 7px; padding: 9px 16px; color: #858597; background: transparent; border-radius: 9px; font-size: 12px; font-weight: 700; }.segmented-tabs button.active { color: #5d4ec6; background: #fff; box-shadow: 0 3px 9px #3d316b12; }
+/* max-width/overflow-x instead of letting the flex box shrink its buttons:
+   shrinking wrapped Japanese labels mid-word ("進捗・メ" / "モ") once a count
+   badge takes up extra room, which reads as broken. Scrolling the whole bar
+   keeps every label intact. */
+.segmented-tabs { display: flex; width: fit-content; max-width: 100%; gap: 4px; padding: 4px; background: #ecebf4; border-radius: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }.segmented-tabs button { display: flex; align-items: center; flex: 0 0 auto; gap: 7px; padding: 9px 16px; color: #858597; background: transparent; border-radius: 9px; font-size: 12px; font-weight: 700; white-space: nowrap; }.segmented-tabs button.active { color: #5d4ec6; background: #fff; box-shadow: 0 3px 9px #3d316b12; }
 .research-intro { display: flex; gap: 16px; align-items: flex-start; margin-top: 30px; padding: 23px; border: 1px solid #edeafc; border-radius: 18px; background: #fff; }.intro-icon { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; color: #6857d0; background: #f0edff; border-radius: 13px; }.research-intro h2 { margin: 5px 0 7px; font-size: 20px; letter-spacing: -.06em; }.research-intro p:not(.eyebrow) { margin: 0; color: #8e8e9e; font-size: 11px; line-height: 1.7; }
 .search-box { display: flex; align-items: center; gap: 10px; margin-top: 15px; padding: 8px 9px 8px 16px; border: 1px solid #deddeb; border-radius: 15px; background: #fff; }.search-box > svg { color: #aaaabd; flex: 0 0 auto; }.search-box input { min-width: 0; flex: 1; color: #24243a; border: 0; outline: 0; font-size: 13px; }.search-box select { width: 100px; border: 0; outline: 0; color: #77778c; background: #fff; font-size: 11px; }
 /* Dedicated "add a company" control, separate from the search box above it
@@ -71,6 +75,18 @@ button:active { transform: scale(.98); }
 .add-company-box select { width: 100px; border: 0; outline: 0; color: #77778c; background: transparent; font-size: 11px; }.notice { display: flex; gap: 8px; margin-top: 13px; padding: 12px 14px; color: #7a739e; background: #f5f3ff; border-radius: 12px; font-size: 11px; line-height: 1.6; }.notice svg { flex: 0 0 auto; color: #7565df; margin-top: 1px; }.notice strong { color: #6654d9; }
 .count-badge { display: inline-grid; place-items: center; min-width: 23px; height: 23px; margin-left: 4px; color: #6654d9; background: #efedff; border-radius: 8px; font-size: 11px; vertical-align: 2px; }.company-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }.company-card { min-width: 0; display: flex; align-items: center; gap: 13px; padding: 17px; color: inherit; background: #fff; border: 1px solid #efeff5; border-radius: 16px; text-align: left; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }.company-card:hover { border-color: #d9d2ff; box-shadow: 0 8px 22px #5042930d; }.company-card.dragging { z-index: 5; border-color: #a99bf4; box-shadow: 0 16px 34px #6654d94d; transform: scale(1.03); }.company-avatar { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; color: #6654d9; background: #efedff; border-radius: 13px; font-size: 18px; font-weight: 800; }.company-avatar.small { width: 34px; height: 34px; border-radius: 11px; font-size: 14px; }.company-card-main { min-width: 0; flex: 1; }.company-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }.company-title strong { min-width: 0; flex: 1 1 auto; font-size: 14px; line-height: 1.4; }.industry-tag { flex: 0 0 auto; padding: 3px 7px; color: #8778d9; background: #f4f2ff; border-radius: 6px; font-size: 9px; }.company-meta { display: flex; flex-wrap: wrap; gap: 6px 15px; margin-top: 8px; color: #9999aa; font-size: 10px; }
 .summary-banner { min-height: 184px; margin-top: 28px; }.summary-banner svg { margin-right: 20px; color: #dcd6ff; }.chip-row { display: flex; gap: 8px; overflow-x: auto; margin: 19px 0 13px; padding-bottom: 3px; }.chip { padding: 8px 14px; color: #858597; background: #fff; border: 1px solid #ecebf3; border-radius: 9px; font-size: 11px; white-space: nowrap; }.chip.selected { color: #fff; background: #6654d9; border-color: #6654d9; }
+/* Small floating hint (see useEdgeScrollHint) for a row that scrolls
+   sideways but gives no other sign there's more to it — a round chip so it
+   reads on top of any background instead of needing to color-match one,
+   and it disappears on its own once you've scrolled to the end. */
+/* min-width: 0 undoes the default CSS grid/flex item behavior of refusing
+   to shrink below its content's natural size — needed because some of these
+   wrappers sit inside a grid cell (.form-grid label), and without it the
+   wrapper (not having its own overflow rule) demands full-content width and
+   defeats the scrolling child's clipping entirely. */
+.chip-row-wrap, .tab-scroll-wrap { position: relative; min-width: 0; }
+.scroll-hint-icon { position: absolute; top: 50%; right: 2px; transform: translateY(-50%); width: 22px; height: 22px; display: grid; place-items: center; color: #6654d9; background: #ffffffe6; border-radius: 999px; box-shadow: 0 2px 6px #24243a26; pointer-events: none; }
+.dark .scroll-hint-icon { color: #cabbff; background: #332f57e6; }
 /* Stage picker chips (see CompanyEditor's 選考ステータス row) fill with the
    same tone their stage-tag shows on the company list (STAGE_TONE), instead
    of the generic purple every other selected chip gets. */
@@ -119,7 +135,7 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .timeline-item.soon .timeline-top span { color: #b3691b; font-weight: 700; }
 .timeline-item.overdue .timeline-main { border-color: #f0b8b8; box-shadow: inset 3px 0 0 #d16464; }
 .timeline-item.overdue .timeline-top span { color: #c25454; font-weight: 700; }
-.settings-card { display: flex; gap: 17px; }.settings-card + .settings-card { margin-top: 12px; }.settings-icon { width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; color: #6654d9; background: #efedff; border-radius: 12px; }.settings-icon.green { color: #4caa8e; background: #e8f7f1; }.settings-icon.orange { color: #d98654; background: #fff2e8; }.settings-card h3 { margin: 2px 0 6px; font-size: 14px; }.settings-card p { max-width: 640px; margin: 0; color: #9090a1; font-size: 11px; line-height: 1.8; }.settings-actions { display: flex; gap: 8px; margin-top: 14px; }.status-message { display: block; margin-top: 9px; color: #55a187; font-size: 10px; }.outline-wide { width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 18px; padding: 12px; color: #6654d9; background: transparent; border: 1px solid #ddd8fb; border-radius: 11px; font-size: 11px; font-weight: 700; }
+.settings-card { display: flex; gap: 17px; }.settings-card + .settings-card { margin-top: 12px; }.settings-card > div:nth-child(2) { flex: 1; min-width: 0; }.settings-icon { width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; color: #6654d9; background: #efedff; border-radius: 12px; }.settings-icon.green { color: #4caa8e; background: #e8f7f1; }.settings-icon.orange { color: #d98654; background: #fff2e8; }.settings-card h3 { margin: 2px 0 6px; font-size: 14px; }.settings-card p { max-width: 640px; margin: 0; color: #9090a1; font-size: 11px; line-height: 1.8; }.settings-actions { display: flex; gap: 8px; margin-top: 14px; }.status-message { display: block; margin-top: 9px; color: #55a187; font-size: 10px; }.outline-wide { width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 18px; padding: 12px; color: #6654d9; background: transparent; border: 1px solid #ddd8fb; border-radius: 11px; font-size: 11px; font-weight: 700; }
 
 /* Interview hub: the mode-choice menu, and the quiz setup/play screens that
    sit behind its "問題" button. */
@@ -431,6 +447,65 @@ body { background: var(--background); color: var(--foreground); }
 .editor-tabs button.active small { background: #ded5ff; }
 .editor-section.flush { margin-top: 0; padding-top: 0; border-top: 0; }
 
+/* Free-form company tags (ResearchScreen's filter row + tag display, and
+   CompanyEditor's TagEditor) — a distinct green so they read as their own
+   axis, separate from 業界's purple industry-tag pill. */
+.tag-chip-row { display: flex; flex-wrap: wrap; overflow-x: visible; gap: 6px; margin-top: 8px; }
+.tag-chip-plain { padding: 3px 7px; color: #3f9c74; background: #eefaf4; border-radius: 6px; font-size: 9px; }
+.tag-editor { display: grid; gap: 10px; }
+.tag-editor .tag-chip-row { margin-top: 0; }
+.tag-chip { display: inline-flex; align-items: center; gap: 5px; padding: 6px 6px 6px 10px; color: #3f9c74; background: #eefaf4; border-radius: 8px; font-size: 11px; }
+.tag-chip button { display: grid; place-items: center; width: 16px; height: 16px; flex: 0 0 auto; color: #3f9c74; background: #ffffffb0; border-radius: 50%; }
+.tag-chip button:hover { color: #2c7a58; }
+.tag-empty-hint { color: #9999aa; font-size: 11px; }
+.tag-editor-input { display: flex; gap: 8px; }
+.tag-editor-input input { flex: 1; min-width: 0; padding: 9px 10px; color: #313147; background: #fbfbfe; border: 1px solid #e7e6f0; border-radius: 9px; outline: none; font-size: 12px; }
+.tag-editor-input input:focus { border-color: #a99bf4; box-shadow: 0 0 0 3px #ece9ff; }
+
+/* 進捗 tab's current-stage distribution (see ResearchScreen — deliberately
+   framed as "where things sit now", not a true conversion funnel; see the
+   comment above its JSX for why). Reuses STAGE_TONE's tone names as the fill
+   color, same as the stage picker chips and stage-tag pills. */
+.funnel-card { margin-top: 18px; padding: 18px; border: 1px solid #ececf3; border-radius: 16px; background: #fff; }
+.funnel-card-heading h3 { margin: 4px 0 0; font-size: 14px; }
+.funnel-chart { display: grid; gap: 10px; margin-top: 14px; }
+.funnel-row { display: grid; grid-template-columns: 62px 1fr 26px; align-items: center; gap: 10px; }
+.funnel-label { overflow: hidden; color: #77778c; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.funnel-track { height: 10px; overflow: hidden; border-radius: 999px; background: #f0eff6; }
+.funnel-fill { height: 100%; border-radius: 999px; transition: width .3s ease; }
+.funnel-tone-neutral { background: #9999ab; }
+.funnel-tone-info { background: #3f7fd1; }
+.funnel-tone-progress { background: #c97a34; }
+.funnel-tone-success { background: #4caa8e; }
+.funnel-tone-danger { background: #c25454; }
+.funnel-count { color: #41347f; font-size: 12px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.funnel-closed-note { margin: 12px 0 0; color: #9999aa; font-size: 10px; }
+
+/* PWA install-promotion banner (HomeScreen only — see InstallBanner). */
+.install-banner { display: flex; align-items: center; gap: 14px; margin-top: 16px; padding: 14px 16px; border: 1px solid #ded5ff; border-radius: 16px; background: #f9f8ff; }
+.install-banner-icon { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; color: #6654d9; background: #efedff; border-radius: 12px; }
+.install-banner-text { flex: 1; min-width: 0; }
+.install-banner-text strong { display: block; font-size: 12px; }
+.install-banner-text p { margin: 3px 0 0; color: #8778d9; font-size: 11px; line-height: 1.6; }
+
+/* Quiz-mode live transcript (see QuizPlayScreen) — sits right under the
+   recorder controls, same dashed-border "in progress" look either state. */
+.quiz-transcript { margin-top: 10px; padding: 10px 12px; border: 1px dashed #ded5ff; border-radius: 12px; background: #f9f8ff; }
+.quiz-transcript-label { display: flex; align-items: center; gap: 6px; margin: 0; color: #8778d9; font-size: 10px; font-weight: 700; }
+.quiz-transcript-text { margin: 6px 0 0; color: #41347f; font-size: 12px; line-height: 1.7; white-space: pre-line; }
+.quiz-transcript-hint { margin: 10px 0 0; color: #9999aa; font-size: 10px; }
+
+/* 自己PR・ガクチカ template list (see TemplateScreen). */
+.full-width { width: 100%; justify-content: center; }
+.template-list { display: grid; gap: 12px; margin-top: 16px; }
+.template-card { padding: 16px 18px; border: 1px solid #ececf3; border-radius: 16px; background: #fff; }
+.template-card-header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.template-card-header h3 { margin: 0; font-size: 14px; }
+.template-updated { flex: 0 0 auto; color: #9999aa; font-size: 9px; }
+.template-body-preview { margin: 8px 0 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; color: #77778c; font-size: 12px; line-height: 1.7; white-space: pre-line; }
+.template-card-actions { display: flex; gap: 8px; margin-top: 12px; }
+.mode-choice-icon.green { color: #4caa8e; background: #e8f7f1; }
+
 /* HomeScreen's "注目" card — schedule items due soon plus companies that
    have been sitting mid-process without an update for a while. */
 .attention-card { display: grid; gap: 2px; margin-top: 16px; padding: 6px; border: 1px solid #f3dfae; border-radius: 16px; background: #fffaf0; }
@@ -580,3 +655,24 @@ body { background: var(--background); color: var(--foreground); }
 
 .dark .practice-bar-fill { background: #3d3768; }
 .dark .practice-bar-fill.today { background: #8977f0; }
+
+/* Dark-mode pairings for this batch's new UI: tags, the stage funnel, the
+   install banner, the quiz transcript panel, and the template list — each
+   reuses an existing dark hue pair from above (green for tags/success,
+   lavender-on-dark-purple for neutral cards) rather than inventing new ones. */
+.dark .tag-chip-plain, .dark .tag-chip { color: #7fe0be; background: #1c3a30; }
+.dark .tag-chip button { color: #7fe0be; background: #14261f; }
+.dark .tag-editor-input input { background: #201e36; border-color: #3a3660; color: #ded9f5; }
+.dark .funnel-card { background: #262440; border-color: #3a3660; }
+.dark .funnel-label { color: #a89ad9; }
+.dark .funnel-track { background: #201e36; }
+.dark .funnel-count { color: #cabbff; }
+.dark .install-banner { background: #262440; border-color: #4a4380; }
+.dark .install-banner-icon { color: #cabbff; background: #332f57; }
+.dark .install-banner-text p { color: #a89ad9; }
+.dark .quiz-transcript { background: #262440; border-color: #4a4380; }
+.dark .quiz-transcript-label { color: #a89ad9; }
+.dark .quiz-transcript-text { color: #cabbff; }
+.dark .template-card { background: #262440; border-color: #3a3660; }
+.dark .template-updated { color: #8d84b8; }
+.dark .template-body-preview { color: #cabbff; }

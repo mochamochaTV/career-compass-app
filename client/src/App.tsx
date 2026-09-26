@@ -6,6 +6,16 @@ import { Route, Router as WouterRouter, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import SharedCompanyView from "./pages/SharedCompanyView";
+
+// A shared company link (see lib/share.ts) puts its payload in the URL HASH,
+// not a real route — the hash never reaches the server, so this works even
+// as a cold, direct link on GitHub Pages, which has no server-side rewrite
+// for SPA routes the way a real router would need. Checked once at module
+// load: this value can't change without a full page navigation anyway (the
+// app itself never writes to location.hash), so there's nothing to react to.
+const SHARE_HASH_PREFIX = "#share=";
+const sharedPayload = window.location.hash.startsWith(SHARE_HASH_PREFIX) ? window.location.hash.slice(SHARE_HASH_PREFIX.length) : null;
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
@@ -33,6 +43,12 @@ function Router() {
 // - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
 
 function App() {
+  // A shared link never wants the visitor's own companies/cards/theme
+  // toggle or bottom nav — it's a one-page, read-only view for someone who
+  // may not even have (or want) the app, so it skips the router, the
+  // person's own data, and most providers entirely.
+  if (sharedPayload !== null) return <SharedCompanyView encoded={sharedPayload} />;
+
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light" switchable>

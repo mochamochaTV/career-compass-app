@@ -244,6 +244,14 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
   // まとめ/進捗 swap in the same scroll container.
   useEffect(() => { window.scrollTo(0, 0); }, [mode]);
   const [rank, setRank] = useState<RankMode>("interest");
+  // A manual drag on the ranking board is meant to let you fine-tune your
+  // own order on top of whichever automatic sort (志望度/年収/福利厚生) is
+  // selected — the hint text above the board says exactly that. Without
+  // this, `sorted` below would just re-sort by that criterion on every
+  // render and silently undo the drag the instant it happened, which is
+  // why reordering there looked like it "didn't work" at all. Switching
+  // rank tabs clears it, since a different criterion means a fresh order.
+  const [manualOrder, setManualOrder] = useState<string[] | null>(null);
   const [industry, setIndustry] = useState("すべて");
   // Kept separate from newCompanyName below — one text field used to double
   // as both "filter the list" and "name the company you're adding", which
@@ -262,7 +270,11 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
   const industries = ["すべて", ...Array.from(new Set(companies.map((c) => c.industry)))];
   const allTags = Array.from(new Set(companies.flatMap((c) => c.tags ?? [])));
   const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && (tagFilter === "すべて" || (c.tags ?? []).includes(tagFilter)) && c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  const sorted = [...filtered].sort((a, b) => rank === "interest" ? b.interest - a.interest : rank === "salary" ? (b.avgSalaryGraduate ?? -1) - (a.avgSalaryGraduate ?? -1) : b.benefits.length - a.benefits.length);
+  const autoSorted = [...filtered].sort((a, b) => rank === "interest" ? b.interest - a.interest : rank === "salary" ? (b.avgSalaryGraduate ?? -1) - (a.avgSalaryGraduate ?? -1) : b.benefits.length - a.benefits.length);
+  // Apply any manual drag order first, then fall back to the automatic sort
+  // for companies that aren't part of it yet (newly added, or newly matching
+  // the current filter) so they still show up rather than vanishing.
+  const sorted = manualOrder ? [...manualOrder.map((id) => filtered.find((c) => c.id === id)).filter((c): c is Company => !!c), ...autoSorted.filter((c) => !manualOrder.includes(c.id))] : autoSorted;
 
   const add = () => { const name = newCompanyName.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "調査して追記", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [] }; setCompanies((current) => [...current, company]); setNewCompanyName(""); setSelected(company); toast.success(`${name}を追加しました`); };
   const save = (updated: Company) => { setCompanies((current) => current.map((c) => c.id === updated.id ? { ...updated, updatedAt: today } : c)); setSelected({ ...updated, updatedAt: today }); toast.success("企業情報を保存しました"); };
@@ -281,6 +293,10 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
       return current.map((c) => (visibleSet.has(c.id) ? byId.get(visibleIds[cursor++])! : c));
     });
   };
+  // The ranking board additionally needs to remember the drag result as an
+  // explicit override (see `manualOrder` above), or the next render's
+  // auto-sort would immediately erase it.
+  const reorderRanking = (visibleIds: string[]) => { setManualOrder(visibleIds); reorderCompanies(visibleIds); };
   const companyDrag = useDragReorder(".company-card");
   const rankDrag = useDragReorder(".ranking-row");
 
@@ -353,9 +369,9 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
     </> : <>
       <section className="summary-banner"><div><p className="eyebrow light">ランキング</p><h2>企業を比べて、<br />志望度を整理する</h2><p>ランキングは志望度などから自動で並び替え、長押しで自分の順位に調整できます。</p></div><Trophy size={54} strokeWidth={1.5} /></section>
       <div className="chip-row">{industries.map((item) => <button key={item} className={`chip ${industry === item ? "selected" : ""}`} onClick={() => setIndustry(item)}>{item}</button>)}</div>
-      <div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => setRank("interest")}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => setRank("salary")}><span className="yen-icon">¥</span>平均年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => setRank("benefits")}><span>＋</span>福利厚生</button></div>
+      <div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => { setRank("interest"); setManualOrder(null); }}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => { setRank("salary"); setManualOrder(null); }}><span className="yen-icon">¥</span>平均年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => { setRank("benefits"); setManualOrder(null); }}><span>＋</span>福利厚生</button></div>
       <div className="card-filter"><span className="hint"><GripVertical size={14} />長押しで並び替え</span></div>
-      <div className="ranking-list" ref={rankDrag.containerRef} onPointerMove={(event) => rankDrag.move(event, reorderCompanies)} onPointerUp={rankDrag.end} onPointerCancel={rankDrag.end}>
+      <div className="ranking-list" ref={rankDrag.containerRef} onPointerMove={(event) => rankDrag.move(event, reorderRanking)} onPointerUp={rankDrag.end} onPointerCancel={rankDrag.end}>
         {sorted.map((c, i) => <div
           key={c.id}
           className={`ranking-row ${rankDrag.draggingId === c.id ? "dragging" : ""}`}
@@ -425,7 +441,7 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
       <button className={tab === "progress" ? "active" : ""} onClick={() => setTab("progress")}>進捗・メモ{logs.length > 0 && <small>{logs.length}</small>}</button>
       <button className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>紐づくカード{linkedCards.length > 0 && <small>{linkedCards.length}</small>}</button>
     </div>{tabsHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
-    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>志望度スコア<input type="number" value={draft.interestScore ?? ""} placeholder="任意の点数" onChange={(e) => update("interestScore", e.target.value ? Number(e.target.value) : null)} /></label><label>初任給（万円）<input type="number" value={draft.startingSalary ?? ""} placeholder="未入力" onChange={(e) => update("startingSalary", e.target.value ? Number(e.target.value) : null)} /></label><label>平均年収・学部卒（万円）<input type="number" value={draft.avgSalaryGraduate ?? ""} placeholder="未入力" onChange={(e) => update("avgSalaryGraduate", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">事業内容<AutoGrowTextarea value={draft.business} onChange={(e) => update("business", e.target.value)} placeholder="何をやっている会社か、代表的な製品・サービスなど" /></label><label className="wide">福利厚生<AutoGrowTextarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<AutoGrowTextarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<AutoGrowTextarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分の強みが生かせるか<AutoGrowTextarea value={draft.strengthFit} onChange={(e) => update("strengthFit", e.target.value)} placeholder="自分のどんな強み・経験が活かせそうか" /></label><label className="wide">自分のメモ<AutoGrowTextarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<AutoGrowTextarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label><label className="wide">タグ（キーワードにも使えます）<TagEditor tags={draft.tags ?? []} onChange={(tags) => update("tags", tags)} /></label></div>}
+    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>志望度スコア<input type="number" value={draft.interestScore ?? ""} placeholder="任意の点数" onChange={(e) => update("interestScore", e.target.value ? Number(e.target.value) : null)} /></label><label>初任給（万円）<input type="number" value={draft.startingSalary ?? ""} placeholder="未入力" onChange={(e) => update("startingSalary", e.target.value ? Number(e.target.value) : null)} /></label><label>平均年収・学部卒（万円）<input type="number" value={draft.avgSalaryGraduate ?? ""} placeholder="未入力" onChange={(e) => update("avgSalaryGraduate", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<AutoGrowTextarea value={draft.location} onChange={(e) => update("location", e.target.value)} placeholder="本社・支社など複数あれば改行して記入" /></label><label className="wide">事業内容<AutoGrowTextarea value={draft.business} onChange={(e) => update("business", e.target.value)} placeholder="何をやっている会社か、代表的な製品・サービスなど" /></label><label className="wide">福利厚生<AutoGrowTextarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<AutoGrowTextarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<AutoGrowTextarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分の強みが生かせるか<AutoGrowTextarea value={draft.strengthFit} onChange={(e) => update("strengthFit", e.target.value)} placeholder="自分のどんな強み・経験が活かせそうか" /></label><label className="wide">自分のメモ<AutoGrowTextarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<AutoGrowTextarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label><label className="wide">タグ（キーワードにも使えます）<TagEditor tags={draft.tags ?? []} onChange={(tags) => update("tags", tags)} /></label></div>}
     {tab === "progress" && <>
       {/* Colored the same way as the stage-tag it produces on the company
           list (STAGE_TONE) — a solid fill of that tone instead of the
@@ -585,6 +601,14 @@ function useDragReorder(itemSelector: string) {
       if (Math.hypot(deltaX, deltaY) > 12 && state.timer) { clearTimeout(state.timer); dragState.current = null; }
       return;
     }
+    // `touchAction: "none"` (set in `start`, once the long-press fires) is
+    // only a hint — on some browsers (notably iOS Safari) a touch's scroll
+    // vs. no-scroll fate can already be decided before that style change
+    // takes effect, so the page would start scrolling out from under the
+    // drag the moment the finger actually moves. Calling preventDefault on
+    // every move while we're in drag mode is what actually, reliably stops
+    // that native scroll from hijacking the gesture.
+    event.preventDefault();
     const items = Array.from(containerRef.current?.querySelectorAll<HTMLElement>(itemSelector) ?? []);
     if (!items.length) return;
     let closestIndex = -1;

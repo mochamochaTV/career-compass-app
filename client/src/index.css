@@ -447,6 +447,13 @@ body { background: var(--background); color: var(--foreground); }
 .editor-tabs button.active small { background: #ded5ff; }
 .editor-section.flush { margin-top: 0; padding-top: 0; border-top: 0; }
 
+/* Live character count under a 質問/答え textarea (add form, edit modal, and
+   both child-card add forms) — a plain .length, so 、and 。count same as any
+   other character; no special-casing punctuation. Right-aligned via
+   justify-self since its parent (a form-grid/inline-form label, or the
+   child-add-form grid) is itself display:grid. */
+.char-count { justify-self: end; margin-top: -2px; color: #aaaaba; font-size: 9px; font-weight: 400; }
+
 /* Free-form company tags (ResearchScreen's filter row + tag display, and
    CompanyEditor's TagEditor) — a distinct green so they read as their own
    axis, separate from 業界's purple industry-tag pill. */

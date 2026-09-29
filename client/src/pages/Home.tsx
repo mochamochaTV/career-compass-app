@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetSta
 import { strToU8 } from "fflate";
 import {
   AlertCircle, ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, GripVertical, Home as HomeIcon, Lightbulb, Link2, Menu, MessageSquare, Mic, Moon, Pause, Pencil, Play, Plus,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, GripVertical, Home as HomeIcon, Lightbulb, Link2, Menu, MessageSquare, Mic, Moon, Pause, Pencil, PictureInPicture2, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Tag, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createBackupZip, parseBackupBytes } from "@/lib/backup";
 import { encodeShare, type SharedCompanySnapshot } from "@/lib/share";
 import { BASE_PATH } from "@/lib/basePath";
+import { openKanpeWindow } from "@/lib/kanpe";
 import { useTheme } from "@/contexts/ThemeContext";
 
 type Screen = "home" | "research" | "interview" | "schedule" | "settings";
@@ -405,7 +406,7 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
       <button className={tab === "progress" ? "active" : ""} onClick={() => setTab("progress")}>進捗・メモ{logs.length > 0 && <small>{logs.length}</small>}</button>
       <button className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>紐づくカード{linkedCards.length > 0 && <small>{linkedCards.length}</small>}</button>
     </div>{tabsHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
-    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<textarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<textarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<textarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<textarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label><label className="wide">タグ<TagEditor tags={draft.tags ?? []} onChange={(tags) => update("tags", tags)} /></label></div>}
+    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>年収（万円）<input type="number" value={draft.salary ?? ""} placeholder="未入力" onChange={(e) => update("salary", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<input value={draft.location} onChange={(e) => update("location", e.target.value)} /></label><label className="wide">福利厚生<AutoGrowTextarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">企業理念<AutoGrowTextarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<AutoGrowTextarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分のメモ<AutoGrowTextarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<AutoGrowTextarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label><label className="wide">タグ<TagEditor tags={draft.tags ?? []} onChange={(tags) => update("tags", tags)} /></label></div>}
     {tab === "progress" && <>
       {/* Colored the same way as the stage-tag it produces on the company
           list (STAGE_TONE) — a solid fill of that tone instead of the
@@ -711,6 +712,7 @@ function ChildCardView({ card, depth, flipped, setFlipped, toggleImportant, togg
       <button className={`star-toggle small ${card.important ? "active" : ""}`} aria-label={card.important ? "重要を解除" : "重要にする"} title={card.important ? "重要を解除" : "重要にする"} onClick={() => toggleImportant(card.id)}><Star size={13} fill={card.important ? "currentColor" : "none"} /></button>
       <button className={`check-toggle small ${card.checked ? "active" : ""}`} aria-label={card.checked ? "対策済みを解除" : "対策済みにする"} title={card.checked ? "対策済みを解除" : "対策済みにする"} onClick={() => toggleChecked(card.id)}><CheckCircle2 size={13} fill={card.checked ? "currentColor" : "none"} /></button>
       <button className={`child-toggle small ${isExpanded ? "active" : ""}`} onClick={() => toggleChildren(card.id)}><MessageSquare size={12} />子カード{children.length > 0 && ` (${children.length})`}</button>
+      <button className="kanpe-toggle small" title="カンペとして別ウィンドウで開く（PC向け）" aria-label="カンペとして別ウィンドウで開く" onClick={() => openKanpeWindow(card.id)}><PictureInPicture2 size={13} /></button>
       <div className="rating-group small">{RATING_ORDER.map((r) => <button key={r} className={`rating-${r} ${card.rating === r ? "active" : ""}`} onClick={() => setRating(card.id, r)}>{RATING_LABEL[r]}</button>)}</div>
     </div>
     {isExpanded && <div className="child-card-panel nested">
@@ -971,6 +973,7 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
           <button className={`star-toggle ${card.important ? "active" : ""}`} aria-label={card.important ? "重要を解除" : "重要にする"} title={card.important ? "重要を解除" : "重要にする"} onClick={() => toggleImportant(card.id)}><Star size={16} fill={card.important ? "currentColor" : "none"} /></button>
           <button className={`check-toggle ${card.checked ? "active" : ""}`} aria-label={card.checked ? "対策済みを解除" : "対策済みにする"} title={card.checked ? "対策済みを解除" : "対策済みにする"} onClick={() => toggleChecked(card.id)}><CheckCircle2 size={16} fill={card.checked ? "currentColor" : "none"} /></button>
           <button className={`child-toggle ${expandedParents.includes(card.id) ? "active" : ""}`} onClick={() => toggleChildren(card.id)}><MessageSquare size={14} />子カード{childrenOf(card.id).length > 0 && ` (${childrenOf(card.id).length})`}</button>
+          <button className="kanpe-toggle" title="カンペとして別ウィンドウで開く（PC向け）" aria-label="カンペとして別ウィンドウで開く" onClick={() => openKanpeWindow(card.id)}><PictureInPicture2 size={15} /></button>
         </div>
         <div className="rating-group">{RATING_ORDER.map((r) => <button key={r} className={`rating-${r} ${card.rating === r ? "active" : ""}`} onClick={() => setRating(card.id, r)}>{RATING_LABEL[r]}</button>)}</div>
       </div>

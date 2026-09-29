@@ -1,11 +1,13 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BASE_PATH } from "@/lib/basePath";
+import { parseKanpeHash } from "@/lib/kanpe";
 import NotFound from "@/pages/NotFound";
 import { Route, Router as WouterRouter, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import KanpeView from "./pages/KanpeView";
 import SharedCompanyView from "./pages/SharedCompanyView";
 
 // A shared company link (see lib/share.ts) puts its payload in the URL HASH,
@@ -16,6 +18,10 @@ import SharedCompanyView from "./pages/SharedCompanyView";
 // app itself never writes to location.hash), so there's nothing to react to.
 const SHARE_HASH_PREFIX = "#share=";
 const sharedPayload = window.location.hash.startsWith(SHARE_HASH_PREFIX) ? window.location.hash.slice(SHARE_HASH_PREFIX.length) : null;
+// A "カンペ" (cheat-sheet) popup window — see lib/kanpe.ts — is opened as
+// this same app's own URL with a `#kanpe=<cardId>` hash, so it shares this
+// origin's localStorage instead of needing its own encoded payload.
+const kanpeCardId = parseKanpeHash(window.location.hash);
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
@@ -48,6 +54,7 @@ function App() {
   // may not even have (or want) the app, so it skips the router, the
   // person's own data, and most providers entirely.
   if (sharedPayload !== null) return <SharedCompanyView encoded={sharedPayload} />;
+  if (kanpeCardId !== null) return <KanpeView cardId={kanpeCardId} />;
 
   return (
     <ErrorBoundary>

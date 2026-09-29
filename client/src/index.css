@@ -266,6 +266,13 @@ body { background: var(--background); color: var(--foreground); }
 .check-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; color: #a0c4ba; background: #f7f6fb; border-radius: 9px; }
 .check-toggle.active { color: #4caa8e; background: #e8f7f1; }
 .check-toggle.small { width: 24px; height: 24px; }
+/* Opens the card as its own small floating window for an online interview
+   (see lib/kanpe.ts) — a plain icon button like star/check, not a toggle
+   with an "active" state, since the popup window it opens is what shows
+   whether it's in use. */
+.kanpe-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; color: #8778d9; background: #f7f6fb; border-radius: 9px; }
+.kanpe-toggle:hover { color: #fff; background: #6654d9; }
+.kanpe-toggle.small { width: 24px; height: 24px; }
 .rating-group { display: flex; gap: 4px; }
 /* Only the top-level card footer's rating row gets the full-width, evenly
    spaced treatment — it now has an entire row to itself. The child-card
@@ -603,6 +610,8 @@ body { background: var(--background); color: var(--foreground); }
 }
 .dark .star-toggle { color: #cdb98a; background: #332f57; border-color: #3a3660; }
 .dark .check-toggle { color: #8fc2b0; background: #332f57; border-color: #3a3660; }
+.dark .kanpe-toggle { color: #b6aedd; background: #332f57; border-color: #3a3660; }
+.dark .kanpe-toggle:hover { color: #fff; background: #6654d9; }
 /* Stage tags (see the light-mode block above) get their own dark pairing per
    tone instead of the flat lavender every other neutral pill uses — reusing
    hue pairs already shipped elsewhere in dark mode (danger-button, the

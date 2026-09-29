@@ -42,7 +42,7 @@ export default function SharedCompanyView({ encoded }: { encoded: string }) {
 
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="flex items-center gap-2 text-slate-600 text-sm"><Star size={15} className="text-[#6654d9] flex-shrink-0" />{"★".repeat(data.interest)}{"☆".repeat(5 - data.interest)}</div>
-              <div className="flex items-center gap-2 text-slate-600 text-sm"><Briefcase size={15} className="text-[#6654d9] flex-shrink-0" />{data.salary ? `${data.salary.toLocaleString()}万円` : "年収未入力"}</div>
+              <div className="flex items-center gap-2 text-slate-600 text-sm"><Briefcase size={15} className="text-[#6654d9] flex-shrink-0" />{data.avgSalaryGraduate ? `${data.avgSalaryGraduate.toLocaleString()}万円` : "平均年収未入力"}</div>
               <div className="flex items-center gap-2 text-slate-600 text-sm col-span-2"><MapPin size={15} className="text-[#6654d9] flex-shrink-0" />{data.location || "勤務地未入力"}</div>
             </div>
 

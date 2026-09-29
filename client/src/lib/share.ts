@@ -11,7 +11,7 @@ export type SharedCompanySnapshot = {
   name: string;
   industry: string;
   interest: number;
-  salary: number | null;
+  avgSalaryGraduate: number | null;
   location: string;
   philosophy: string;
   person: string;

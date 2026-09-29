@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetSta
 import { strToU8 } from "fflate";
 import {
   AlertCircle, ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, GripVertical, Home as HomeIcon, Lightbulb, Link2, Menu, MessageSquare, Mic, Moon, Pause, Pencil, PictureInPicture2, Play, Plus,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, GripVertical, Home as HomeIcon, Lightbulb, Link2, Menu, MessageCircleQuestion, MessageSquare, Mic, Moon, Pause, Pencil, PictureInPicture2, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Tag, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -81,6 +81,14 @@ export type ScheduleItem = { id: string; title: string; date: string; time: stri
 // pasted into whichever company's ES or interview prep needs it, instead of
 // re-typing (or hunting through old notes for) the same story every time.
 export type PitchTemplate = { id: string; title: string; body: string; updatedAt: string };
+
+// A single "逆質問" (a question to ask the interviewer at the end) plus the
+// answer that company actually gave when it was asked — kept separate from
+// interview cards (those are questions THEY ask; this is the other
+// direction). companyId is null for a "共通" entry: a question/answer worth
+// reusing regardless of which company it came from, rather than one tied to
+// a specific company's interview.
+export type ReverseQuestion = { id: string; companyId: string | null; question: string; answer: string; updatedAt: string };
 
 // UI text size, applied app-wide as a CSS zoom on the whole shell (see Home())
 // rather than rewriting every literal px font-size in index.css to a
@@ -1225,7 +1233,7 @@ function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { 
 // of the three sub-screens is showing lives only here, not in the app-wide
 // Screen type, so switching tabs and coming back always starts at this menu.
 function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; companies: Company[]; onNavigate: (s: Screen) => void }) {
-  const [subScreen, setSubScreen] = useState<"menu" | "cards" | "quiz-setup" | "quiz-play" | "templates">("menu");
+  const [subScreen, setSubScreen] = useState<"menu" | "cards" | "quiz-setup" | "quiz-play" | "templates" | "reverse-questions">("menu");
   // Same reasoning as the top-level screen switch (see Home()) — this hub
   // has its own nested navigation between 面接カード/問題 sub-screens.
   useEffect(() => { window.scrollTo(0, 0); }, [subScreen]);
@@ -1275,6 +1283,7 @@ function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: Inter
   if (subScreen === "quiz-setup") return <QuizSetupScreen cards={topLevelCards} settings={quizSettings} setSettings={setQuizSettings} onNavigate={onNavigate} onBack={backToMenu} onStart={startQuiz} />;
   if (subScreen === "quiz-play") return <QuizPlayScreen deck={quizDeck} index={quizIndex} flipped={quizFlipped} onFlip={() => setQuizFlipped((f) => !f)} onPrev={quizPrev} onNext={quizNext} onNavigate={onNavigate} onBack={backToMenu} />;
   if (subScreen === "templates") return <TemplateScreen onNavigate={onNavigate} onBack={backToMenu} />;
+  if (subScreen === "reverse-questions") return <ReverseQuestionScreen companies={companies} onNavigate={onNavigate} onBack={backToMenu} />;
 
   const weekAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weeklyCount = practiceLog.filter((iso) => new Date(iso).getTime() >= weekAgoMs).length;
@@ -1320,6 +1329,11 @@ function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: Inter
       <button className="mode-choice-card" onClick={() => setSubScreen("templates")}>
         <div className="mode-choice-icon green"><FileText size={22} /></div>
         <div><h3>自己PR・ガクチカ</h3><p>使い回すテンプレを書いて、いつでもコピーする</p></div>
+        <ChevronRight size={18} />
+      </button>
+      <button className="mode-choice-card" onClick={() => setSubScreen("reverse-questions")}>
+        <div className="mode-choice-icon pink"><MessageCircleQuestion size={22} /></div>
+        <div><h3>逆質問メモ</h3><p>企業ごと・共通の逆質問と、返ってきた回答を残す</p></div>
         <ChevronRight size={18} />
       </button>
     </div>
@@ -1383,6 +1397,79 @@ function TemplateScreen({ onNavigate, onBack }: { onNavigate: (s: Screen) => voi
         </div>
       </div>)}
       {!templates.length && !show && <div className="empty-state large"><FileText size={24} />まだテンプレがありません。自己PRやガクチカを書いて残しておきましょう。</div>}
+    </div>
+  </div>;
+}
+
+// One place to collect "逆質問" (questions to ask the interviewer at the
+// end) and the answer a company actually gave when asked — the other
+// direction from interview cards (which are questions THEY ask). Each entry
+// is tied to one company, or left as "共通" (companyId: null) for a
+// question/answer worth reusing regardless of which company it came from.
+function ReverseQuestionScreen({ companies, onNavigate, onBack }: { companies: Company[]; onNavigate: (s: Screen) => void; onBack: () => void }) {
+  const [entries, setEntries] = usePersisted<ReverseQuestion[]>("cc_reverse_questions", []);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ companyId: string | null; question: string; answer: string }>({ companyId: null, question: "", answer: "" });
+  const [show, setShow] = useState(false);
+  // "all" | "common" | a company id — also doubles as the default company
+  // for a new entry started while a specific company is already selected.
+  const [filter, setFilter] = useState<string>("all");
+
+  const companyName = (id: string | null) => companies.find((c) => c.id === id)?.name;
+  const startNew = () => { setEditingId(null); setDraft({ companyId: filter !== "all" && filter !== "common" ? filter : null, question: "", answer: "" }); setShow(true); };
+  const startEdit = (entry: ReverseQuestion) => { setEditingId(entry.id); setDraft({ companyId: entry.companyId, question: entry.question, answer: entry.answer }); setShow(true); };
+  const cancel = () => { setShow(false); setEditingId(null); setDraft({ companyId: null, question: "", answer: "" }); };
+  const save = () => {
+    if (!draft.question.trim()) return toast.error("逆質問の内容を入力してください");
+    const now = new Date().toISOString();
+    if (editingId) {
+      setEntries((current) => current.map((e) => (e.id === editingId ? { ...e, companyId: draft.companyId, question: draft.question, answer: draft.answer, updatedAt: now } : e)));
+      toast.success("逆質問を更新しました");
+    } else {
+      setEntries((current) => [{ id: `revq-${Date.now()}`, companyId: draft.companyId, question: draft.question, answer: draft.answer, updatedAt: now }, ...current]);
+      toast.success("逆質問を追加しました");
+    }
+    cancel();
+  };
+  const remove = (id: string) => { if (!window.confirm("この逆質問を削除しますか？この操作は取り消せません。")) return; setEntries((current) => current.filter((e) => e.id !== id)); toast.success("逆質問を削除しました"); };
+
+  const visibleEntries = entries.filter((entry) => (filter === "all" ? true : filter === "common" ? entry.companyId === null : entry.companyId === filter));
+  // Only lists companies that actually have at least one entry, so the
+  // filter row doesn't grow to list every researched company regardless of
+  // whether any reverse-question notes exist for it yet.
+  const companiesWithEntries = companies.filter((c) => entries.some((e) => e.companyId === c.id));
+
+  return <div className="screen">
+    <Header title="逆質問メモ" eyebrow="面接対策" onMenu={() => onNavigate("settings")} />
+    <button className="text-button mode-back-link" onClick={onBack}><ArrowLeft size={15} />選択に戻る</button>
+    <section className="page-lead"><div><p className="eyebrow">逆質問メモ</p><h2>聞いた逆質問と、返ってきた回答を残す</h2><p>企業ごとに残すほか、「共通」としてどの企業にも使い回せる逆質問もまとめておけます。</p></div></section>
+    {!show && <button className="primary-button full-width" onClick={startNew}><Plus size={17} />新しい逆質問を追加</button>}
+    {show && <div className="inline-form">
+      <div className="form-grid">
+        <label className="wide">対象<select value={draft.companyId ?? ""} onChange={(e) => setDraft((d) => ({ ...d, companyId: e.target.value || null }))}><option value="">共通（企業を問わない）</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label className="wide">逆質問<AutoGrowTextarea value={draft.question} onChange={(e) => setDraft((d) => ({ ...d, question: e.target.value }))} placeholder="例：入社後、最初の半年でどんな成果を期待されますか？" /></label>
+        <label className="wide">その企業からの回答<AutoGrowTextarea value={draft.answer} onChange={(e) => setDraft((d) => ({ ...d, answer: e.target.value }))} placeholder="面接で実際に返ってきた回答をメモ（まだ聞けていなければ空欄でOK）" /></label>
+      </div>
+      <div className="child-add-actions"><button className="secondary-button" onClick={cancel}>キャンセル</button><button className="primary-button" onClick={save}><Check size={16} />{editingId ? "更新する" : "保存する"}</button></div>
+    </div>}
+    <div className="category-filter">
+      <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>すべて<small>{entries.length}</small></button>
+      <button className={filter === "common" ? "active" : ""} onClick={() => setFilter("common")}>共通<small>{entries.filter((e) => e.companyId === null).length}</small></button>
+      {companiesWithEntries.map((c) => <button key={c.id} className={filter === c.id ? "active" : ""} onClick={() => setFilter(c.id)}>{c.name}<small>{entries.filter((e) => e.companyId === c.id).length}</small></button>)}
+    </div>
+    <div className="template-list">
+      {visibleEntries.map((entry) => <div className="template-card" key={entry.id}>
+        <div className="template-card-header"><h3>{entry.question}</h3><span className="template-updated">{new Date(entry.updatedAt).toLocaleDateString("ja-JP")}更新</span></div>
+        <span className="industry-tag">{entry.companyId ? (companyName(entry.companyId) ?? "削除済みの企業") : "共通"}</span>
+        {entry.answer
+          ? <p className="template-body-preview">{entry.answer}</p>
+          : <p className="template-body-preview" style={{ color: "#c2c2cf" }}>まだ回答を記録していません</p>}
+        <div className="template-card-actions">
+          <button className="secondary-button" onClick={() => startEdit(entry)}><Pencil size={14} />編集</button>
+          <button className="icon-button" aria-label="この逆質問を削除" onClick={() => remove(entry.id)}><Trash2 size={15} /></button>
+        </div>
+      </div>)}
+      {!visibleEntries.length && !show && <div className="empty-state large"><MessageCircleQuestion size={24} />{filter === "all" ? "まだ逆質問がありません。聞きたい質問や、聞いた回答を書いて残しておきましょう。" : "このフィルターに一致する逆質問はまだありません。"}</div>}
     </div>
   </div>;
 }

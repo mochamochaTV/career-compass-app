@@ -144,6 +144,7 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .mode-choice-card:hover { border-color: #d9d2ff; box-shadow: 0 8px 22px #5042930d; }
 .mode-choice-icon { width: 46px; height: 46px; display: grid; place-items: center; flex: 0 0 auto; color: #6654d9; background: #efedff; border-radius: 14px; }
 .mode-choice-icon.orange { color: #d98654; background: #fff2e8; }
+.mode-choice-icon.pink { color: #c14f80; background: #ffeaf3; }
 .mode-choice-card > div:nth-child(2) { flex: 1; min-width: 0; }
 .mode-choice-card h3 { margin: 0 0 4px; font-size: 15px; }
 .mode-choice-card p { margin: 0; color: #9090a1; font-size: 11px; line-height: 1.6; }

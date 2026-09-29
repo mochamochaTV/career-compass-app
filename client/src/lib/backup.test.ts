@@ -5,6 +5,9 @@ const payload = {
   companies: [{ id: "company-1", name: "任天堂" }],
   cards: [{ id: "card-1", question: "自己紹介をしてください" }],
   schedule: [{ id: "task-1", title: "企業研究メモを更新" }],
+  pitchTemplates: [{ id: "pitch-1", title: "自己PR", body: "強み：粘り強さ" }],
+  reverseQuestions: [{ id: "revq-1", companyId: null, question: "入社後に期待される成果は？", answer: "" }],
+  cardCategories: ["基本", "志望動機"],
   exportedAt: "2026-09-17T00:00:00.000Z",
   formatVersion: 1,
 };

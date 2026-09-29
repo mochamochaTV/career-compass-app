@@ -13,6 +13,10 @@ const CARD_GRADIENTS: Record<string, [string, string]> = {
   orange: ["#d17a2e", "#eaa563"],
   pink: ["#c94f83", "#e585ac"],
   gray: ["#5c5c6e", "#8a8a9c"],
+  red: ["#c94444", "#e98080"],
+  teal: ["#2f96a0", "#5cc9d1"],
+  yellow: ["#b8922e", "#dfc067"],
+  indigo: ["#3d4fb0", "#7484e0"],
 };
 
 function loadCards(): InterviewCard[] {

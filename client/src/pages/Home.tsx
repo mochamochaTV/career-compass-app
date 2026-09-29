@@ -40,9 +40,9 @@ export type SelfRating = "excellent" | "good" | "fair" | "poor";
 // otherwise-identical purple tiles is easier to tell apart at a glance —
 // e.g. color by theme or by how confident you feel about it. Child cards
 // keep the fixed purple/green flip look and don't get their own color.
-export const CARD_COLORS = ["purple", "blue", "green", "orange", "pink", "gray"] as const;
+export const CARD_COLORS = ["purple", "blue", "green", "orange", "pink", "gray", "red", "teal", "yellow", "indigo"] as const;
 export type CardColor = typeof CARD_COLORS[number];
-export const CARD_COLOR_LABEL: Record<CardColor, string> = { purple: "紫", blue: "青", green: "緑", orange: "橙", pink: "桃", gray: "灰" };
+export const CARD_COLOR_LABEL: Record<CardColor, string> = { purple: "紫", blue: "青", green: "緑", orange: "橙", pink: "桃", gray: "灰", red: "赤", teal: "青緑", yellow: "黄", indigo: "藍" };
 // A card can be a follow-up on another card (parentId points at it) — e.g.
 // the interviewer's likely next question given a particular answer. Child
 // cards don't get their own place in the grid or category counts; they only
@@ -115,7 +115,18 @@ const starterSchedule: ScheduleItem[] = [
   { id: "task-3", title: "ES提出期限を登録", date: "2026-09-20", time: "23:59", category: "選考", done: false },
 ];
 
-type CloudPayload = { companies?: Company[]; cards?: InterviewCard[]; schedule?: ScheduleItem[] };
+type CloudPayload = { companies?: Company[]; cards?: InterviewCard[]; schedule?: ScheduleItem[]; pitchTemplates?: PitchTemplate[]; reverseQuestions?: ReverseQuestion[]; cardCategories?: string[] };
+// Maps each backup field to the localStorage key it lives under — the two
+// don't always match (cc_pitch_templates vs. pitchTemplates), so backup/
+// restore share this table instead of each guessing at the other's naming.
+const BACKUP_FIELD_KEYS: Record<keyof CloudPayload, string> = {
+  companies: "cc_companies",
+  cards: "cc_cards",
+  schedule: "cc_schedule",
+  pitchTemplates: "cc_pitch_templates",
+  reverseQuestions: "cc_reverse_questions",
+  cardCategories: "cc_card_categories",
+};
 
 function load<T>(key: string, fallback: T): T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; } }
 function usePersisted<T>(key: string, initial: T) { const [value, setValue] = useState<T>(() => load(key, initial)); useEffect(() => localStorage.setItem(key, JSON.stringify(value)), [key, value]); return [value, setValue] as const; }
@@ -1217,12 +1228,21 @@ function ScheduleScreen({ schedule, setSchedule, onNavigate }: { schedule: Sched
 function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { onNavigate: (s: Screen) => void; onUpdateApp: () => void; fontScale: FontScale; setFontScale: Dispatch<SetStateAction<FontScale>> }) {
   const [status, setStatus] = useState("");
   const { theme, toggleTheme } = useTheme();
-  const getData = () => ({ companies: load("cc_companies", starterCompanies), cards: load("cc_cards", starterCards), schedule: load("cc_schedule", starterSchedule), exportedAt: new Date().toISOString(), formatVersion: 1 });
+  const getData = () => ({
+    companies: load("cc_companies", starterCompanies),
+    cards: load("cc_cards", starterCards),
+    schedule: load("cc_schedule", starterSchedule),
+    pitchTemplates: load<PitchTemplate[]>("cc_pitch_templates", []),
+    reverseQuestions: load<ReverseQuestion[]>("cc_reverse_questions", []),
+    cardCategories: load<string[]>("cc_card_categories", Array.from(new Set(starterCards.map((card) => card.category)))),
+    exportedAt: new Date().toISOString(),
+    formatVersion: 1,
+  });
   const download = (bytes: Uint8Array, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type })); const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); };
   const backup = () => { download(strToU8(JSON.stringify(getData(), null, 2)), `career-compass-backup-${today}.json`, "application/json"); setStatus("JSONバックアップを書き出しました"); };
   const backupZip = () => { const data = getData(); download(createBackupZip(data), `career-compass-backup-${today}.zip`, "application/zip"); setStatus("ZIPバックアップを書き出しました"); };
-  const restore = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const isZip = file.name.toLowerCase().endsWith(".zip"); const reader = new FileReader(); reader.onload = () => { try { const bytes = isZip ? new Uint8Array(reader.result as ArrayBuffer) : strToU8(String(reader.result)); const data = parseBackupBytes(bytes, file.name) as CloudPayload; ["companies", "cards", "schedule"].forEach((key) => { const value = data[key as keyof CloudPayload]; if (Array.isArray(value)) localStorage.setItem(`cc_${key}`, JSON.stringify(value)); }); setStatus("バックアップを復元しました。画面を再読み込みします"); setTimeout(() => location.reload(), 700); } catch { setStatus("バックアップを読み込めませんでした。Career CompassのJSONまたはZIPを選択してください"); } }; if (isZip) reader.readAsArrayBuffer(file); else reader.readAsText(file); e.target.value = ""; };
-  return <div className="screen"><Header title="設定" eyebrow="アプリ設定" onMenu={() => onNavigate("home")} /><section className="page-lead"><div><p className="eyebrow">マイスペース</p><h2>安心して、積み上げる</h2><p>アプリの更新でデータが消えないように、この端末に自動保存しています。</p></div><Settings size={42} /></section><section className="settings-card"><div className="settings-icon purple">{theme === "dark" ? <Moon size={20} /> : <Sun size={20} />}</div><div><h3>表示</h3><p>ダークモードと文字サイズを、この端末向けに調整できます。</p><div className="display-settings-row"><span className="display-settings-label">配色</span><div className="chip-row"><button className={`chip ${theme === "light" ? "selected" : ""}`} onClick={() => theme === "dark" && toggleTheme?.()}><Sun size={13} />ライト</button><button className={`chip ${theme === "dark" ? "selected" : ""}`} onClick={() => theme === "light" && toggleTheme?.()}><Moon size={13} />ダーク</button></div></div><div className="display-settings-row"><span className="display-settings-label">文字サイズ</span><div className="chip-row">{(Object.keys(FONT_SCALE_LABEL) as FontScale[]).map((scale) => <button key={scale} className={`chip ${fontScale === scale ? "selected" : ""}`} onClick={() => setFontScale(scale)}>{FONT_SCALE_LABEL[scale]}</button>)}</div></div></div></section><section className="settings-card"><div className="settings-icon"><FileDown size={20} /></div><div><h3>就活データのバックアップ</h3><p>企業・面接カード・予定をJSONまたはZIPで保存できます。他の端末に移すときは、こちらのZIPを復元してください。</p>{/* 復元 gets its own amber tone (see .restore-button) rather than the same
+  const restore = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const isZip = file.name.toLowerCase().endsWith(".zip"); const reader = new FileReader(); reader.onload = () => { try { const bytes = isZip ? new Uint8Array(reader.result as ArrayBuffer) : strToU8(String(reader.result)); const data = parseBackupBytes(bytes, file.name) as CloudPayload; (Object.keys(BACKUP_FIELD_KEYS) as Array<keyof CloudPayload>).forEach((field) => { const value = data[field]; if (Array.isArray(value)) localStorage.setItem(BACKUP_FIELD_KEYS[field], JSON.stringify(value)); }); setStatus("バックアップを復元しました。画面を再読み込みします"); setTimeout(() => location.reload(), 700); } catch { setStatus("バックアップを読み込めませんでした。Career CompassのJSONまたはZIPを選択してください"); } }; if (isZip) reader.readAsArrayBuffer(file); else reader.readAsText(file); e.target.value = ""; };
+  return <div className="screen"><Header title="設定" eyebrow="アプリ設定" onMenu={() => onNavigate("home")} /><section className="page-lead"><div><p className="eyebrow">マイスペース</p><h2>安心して、積み上げる</h2><p>アプリの更新でデータが消えないように、この端末に自動保存しています。</p></div><Settings size={42} /></section><section className="settings-card"><div className="settings-icon purple">{theme === "dark" ? <Moon size={20} /> : <Sun size={20} />}</div><div><h3>表示</h3><p>ダークモードと文字サイズを、この端末向けに調整できます。</p><div className="display-settings-row"><span className="display-settings-label">配色</span><div className="chip-row"><button className={`chip ${theme === "light" ? "selected" : ""}`} onClick={() => theme === "dark" && toggleTheme?.()}><Sun size={13} />ライト</button><button className={`chip ${theme === "dark" ? "selected" : ""}`} onClick={() => theme === "light" && toggleTheme?.()}><Moon size={13} />ダーク</button></div></div><div className="display-settings-row"><span className="display-settings-label">文字サイズ</span><div className="chip-row">{(Object.keys(FONT_SCALE_LABEL) as FontScale[]).map((scale) => <button key={scale} className={`chip ${fontScale === scale ? "selected" : ""}`} onClick={() => setFontScale(scale)}>{FONT_SCALE_LABEL[scale]}</button>)}</div></div></div></section><section className="settings-card"><div className="settings-icon"><FileDown size={20} /></div><div><h3>就活データのバックアップ</h3><p>企業・面接カード・予定・自己PR・逆質問メモをJSONまたはZIPで保存できます。パソコンとスマホでデータを揃えたいときは、こちらのZIPを一方で書き出して、もう一方で復元してください。</p>{/* 復元 gets its own amber tone (see .restore-button) rather than the same
     purple as the two save buttons — it overwrites whatever is already on
     this device, which is a meaningfully different, less-reversible action
     than exporting a copy. */}

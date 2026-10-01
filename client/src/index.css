@@ -360,6 +360,11 @@ body { background: var(--background); color: var(--foreground); }
 .category-manager-name { display: inline-flex; align-items: center; gap: 7px; flex: 1; padding: 8px 4px; color: #313147; background: transparent; font-size: 13px; font-weight: 600; text-align: left; }
 .category-manager-name svg { color: #b0b0c2; }
 .category-manager-row input { flex: 1; }
+.field-order-modal { width: min(480px, 100%); }
+.field-order-list { display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
+.field-order-row { display: flex; align-items: center; gap: 10px; padding: 13px 14px; color: #313147; background: #fbfbfe; border: 1px solid #ececf3; border-radius: 12px; font-size: 13px; font-weight: 600; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.field-order-row svg { flex: 0 0 auto; color: #b0b0c2; }
+.field-order-row.dragging { position: relative; z-index: 5; border-color: #a99bf4; background: #f1efff; box-shadow: 0 16px 34px #6654d94d; transform: scale(1.02); }
 @media (max-width: 760px) { [data-sonner-toaster][data-position="bottom-center"], [data-sonner-toaster][data-position="bottom-right"], [data-sonner-toaster][data-position="bottom-left"] { bottom: 88px !important; } .flashcard-wrap { min-height: 194px; }
   /* iOS locks pinch-zoom here (see the viewport meta's maximum-scale=1), but
      Safari still tries to auto-zoom the page to any focused text field whose
@@ -584,6 +589,7 @@ body { background: var(--background); color: var(--foreground); }
 .dark .practice-stats-card, .dark .stage-column, .dark .child-card-panel,
 .dark .reflection-log-entry, .dark .linked-card-row, .dark .quiz-recorder,
 .dark .timeline-main, .dark .category-manager-row, .dark .child-add-form textarea.autogrow,
+.dark .field-order-modal, .dark .field-order-row,
 .dark .attention-card {
   background: #262440; border-color: #3a3660; color: #ded9f5;
 }
@@ -591,7 +597,7 @@ body { background: var(--background); color: var(--foreground); }
 .dark .attention-header { color: #e0b768; }
 .dark .attention-row:hover { background: #3a3220; }
 .dark .company-card:hover, .dark .mode-choice-card:hover { border-color: #55508c; box-shadow: 0 8px 22px #00000055; }
-.dark .company-card.dragging, .dark .ranking-row.dragging, .dark .category-manager-row.dragging { background: #322c5c; }
+.dark .company-card.dragging, .dark .ranking-row.dragging, .dark .category-manager-row.dragging, .dark .field-order-row.dragging { background: #322c5c; }
 
 .dark .side-rail { background: #201e36; border-color: #3a3660; }
 .dark .rail-button { color: #b6aedd; }

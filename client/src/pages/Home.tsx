@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { strToU8 } from "fflate";
 import {
-  AlertCircle, ArrowLeft, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
+  AlertCircle, ArrowLeft, ArrowUpDown, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, GripVertical, Home as HomeIcon, Lightbulb, Link2, Menu, MessageCircleQuestion, MessageSquare, Mic, Moon, Pause, Pencil, PictureInPicture2, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Tag, Target, Trash2, Trophy, X,
 } from "lucide-react";
@@ -34,7 +34,53 @@ export const STAGE_TONE: Record<CompanyStage, "neutral" | "info" | "progress" | 
 // A single dated journal entry — "面接後の振り返りメモ" — free-form notes the
 // person leaves for themselves after an interview or a stage change.
 export type InterviewLogEntry = { id: string; date: string; note: string };
-export type Company = { id: string; name: string; industry: string; interest: number; interestScore: number | null; startingSalary: number | null; avgSalaryGraduate: number | null; business: string; strengthFit: string; benefits: string; holidays: string; location: string; philosophy: string; person: string; notes: string; sources: string[]; updatedAt: string; stage?: CompanyStage; interviewLogs?: InterviewLogEntry[]; tags?: string[] };
+export type Company = {
+  id: string; name: string; industry: string; interest: number; interestScore: number | null;
+  startingSalary: number | null; avgSalaryGraduate: number | null; business: string; strengthFit: string;
+  benefits: string; holidays: string; employeeVoice: string; studentVoice: string; location: string;
+  philosophy: string; person: string; notes: string; sources: string[]; updatedAt: string;
+  companyOverview: string; founded: string; capital: string; employeeCount: string; avgAge: string;
+  programs: string; payOvertimeSystem: string; workHoursHolidays: string; industryAvgSalary: string;
+  revenue: string; customers: string; competitiveEdge: string; outlook: string; recruitingInfo: string;
+  annualHiringTrend: string;
+  stage?: CompanyStage; interviewLogs?: InterviewLogEntry[]; tags?: string[];
+};
+// The basic-info fields shown in CompanyEditor, in a user-customizable
+// order (see FieldOrderManager) — one global order applied to every
+// company, since someone who cares about salary and someone who wants
+// 企業理念 first both want that choice to stick everywhere, not per
+// company. 企業名 isn't here: it's the editor's own title, always first.
+export type CompanyFieldKey =
+  | "industry" | "interest" | "interestScore" | "startingSalary" | "avgSalaryGraduate" | "location"
+  | "business" | "benefits" | "holidays" | "philosophy" | "person" | "employeeVoice" | "studentVoice"
+  | "strengthFit" | "notes" | "sources" | "tags"
+  | "companyOverview" | "founded" | "capital" | "employeeCount" | "avgAge" | "programs"
+  | "payOvertimeSystem" | "workHoursHolidays" | "industryAvgSalary" | "revenue" | "customers"
+  | "competitiveEdge" | "outlook" | "recruitingInfo" | "annualHiringTrend";
+export const COMPANY_FIELD_LABELS: Record<CompanyFieldKey, string> = {
+  industry: "業界", interest: "志望度（★評価）", interestScore: "志望度スコア",
+  startingSalary: "初任給", avgSalaryGraduate: "平均年収（学部卒）", location: "勤務地",
+  business: "事業内容", benefits: "福利厚生", holidays: "年間休日・休暇制度",
+  philosophy: "企業理念", person: "求める人物像", employeeVoice: "社員の声",
+  studentVoice: "学生の声", strengthFit: "自分の強みが生かせるか", notes: "自分のメモ",
+  sources: "参考URL", tags: "タグ",
+  companyOverview: "企業概要", founded: "設立", capital: "資本金", employeeCount: "社員数",
+  avgAge: "平均年齢", programs: "社内制度", payOvertimeSystem: "給与・諸手当＋残業代の制度",
+  workHoursHolidays: "勤務時間＋休日", industryAvgSalary: "業界の平均給与", revenue: "売上高",
+  customers: "お客様は誰か", competitiveEdge: "同業内の強み・弱み", outlook: "将来性",
+  recruitingInfo: "採用情報", annualHiringTrend: "例年の新卒採用人数や倍率",
+};
+export const DEFAULT_COMPANY_FIELD_ORDER: CompanyFieldKey[] = [
+  "companyOverview", "philosophy", "founded", "capital", "industry", "employeeCount", "avgAge", "location",
+  "business", "customers", "competitiveEdge", "industryAvgSalary", "revenue",
+  "programs", "benefits", "payOvertimeSystem", "workHoursHolidays", "holidays",
+  "startingSalary", "avgSalaryGraduate",
+  "recruitingInfo", "annualHiringTrend",
+  "person", "outlook",
+  "interest", "interestScore", "strengthFit",
+  "employeeVoice", "studentVoice",
+  "notes", "sources", "tags",
+];
 export type SelfRating = "excellent" | "good" | "fair" | "poor";
 // Top-level cards can be recolored (see CardColorPicker) so a long list of
 // otherwise-identical purple tiles is easier to tell apart at a glance —
@@ -100,9 +146,9 @@ const FONT_SCALE_LABEL: Record<FontScale, string> = { small: "小", standard: "�
 
 const today = new Date().toISOString().slice(0, 10);
 const starterCompanies: Company[] = [
-  { id: "company-1", name: "任天堂", industry: "ゲーム", interest: 5, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "情報を追加", holidays: "", location: "京都・東京", philosophy: "自分で企業理念を追記", person: "求める人物像を追記", notes: "調べる画面から企業情報を追加できます。", sources: ["https://www.nintendo.co.jp/", "https://www.nintendo.co.jp/jobs/"], updatedAt: today, stage: "エントリー", interviewLogs: [] },
-  { id: "company-2", name: "カプコン", industry: "ゲーム", interest: 4, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "情報を追加", holidays: "", location: "大阪・東京", philosophy: "", person: "", notes: "", sources: ["https://www.capcom.co.jp/", "https://www.capcom.co.jp/recruit/"], updatedAt: today, stage: "未応募", interviewLogs: [] },
-  { id: "company-3", name: "ソニーグループ", industry: "IT・メーカー", interest: 3, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "情報を追加", holidays: "", location: "東京ほか", philosophy: "", person: "", notes: "", sources: ["https://www.sony.com/ja/SonyInfo/Jobs/"], updatedAt: today, stage: "未応募", interviewLogs: [] },
+  { id: "company-1", name: "任天堂", industry: "ゲーム", interest: 5, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "情報を追加", holidays: "", employeeVoice: "", studentVoice: "", location: "京都・東京", philosophy: "自分で企業理念を追記", person: "求める人物像を追記", notes: "調べる画面から企業情報を追加できます。", sources: ["https://www.nintendo.co.jp/", "https://www.nintendo.co.jp/jobs/"], updatedAt: today, stage: "エントリー", interviewLogs: [], companyOverview: "", founded: "", capital: "", employeeCount: "", avgAge: "", programs: "", payOvertimeSystem: "", workHoursHolidays: "", industryAvgSalary: "", revenue: "", customers: "", competitiveEdge: "", outlook: "", recruitingInfo: "", annualHiringTrend: "" },
+  { id: "company-2", name: "カプコン", industry: "ゲーム", interest: 4, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "情報を追加", holidays: "", employeeVoice: "", studentVoice: "", location: "大阪・東京", philosophy: "", person: "", notes: "", sources: ["https://www.capcom.co.jp/", "https://www.capcom.co.jp/recruit/"], updatedAt: today, stage: "未応募", interviewLogs: [], companyOverview: "", founded: "", capital: "", employeeCount: "", avgAge: "", programs: "", payOvertimeSystem: "", workHoursHolidays: "", industryAvgSalary: "", revenue: "", customers: "", competitiveEdge: "", outlook: "", recruitingInfo: "", annualHiringTrend: "" },
+  { id: "company-3", name: "ソニーグループ", industry: "IT・メーカー", interest: 3, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "情報を追加", holidays: "", employeeVoice: "", studentVoice: "", location: "東京ほか", philosophy: "", person: "", notes: "", sources: ["https://www.sony.com/ja/SonyInfo/Jobs/"], updatedAt: today, stage: "未応募", interviewLogs: [], companyOverview: "", founded: "", capital: "", employeeCount: "", avgAge: "", programs: "", payOvertimeSystem: "", workHoursHolidays: "", industryAvgSalary: "", revenue: "", customers: "", competitiveEdge: "", outlook: "", recruitingInfo: "", annualHiringTrend: "" },
 ];
 const starterCards: InterviewCard[] = [
   { id: "card-1", category: "基本", question: "自己紹介をしてください", answer: "大学・専攻・経験・志望につながる強みを1分で話す。" },
@@ -276,7 +322,7 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
   // the current filter) so they still show up rather than vanishing.
   const sorted = manualOrder ? [...manualOrder.map((id) => filtered.find((c) => c.id === id)).filter((c): c is Company => !!c), ...autoSorted.filter((c) => !manualOrder.includes(c.id))] : autoSorted;
 
-  const add = () => { const name = newCompanyName.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "調査して追記", holidays: "", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [] }; setCompanies((current) => [...current, company]); setNewCompanyName(""); setSelected(company); toast.success(`${name}を追加しました`); };
+  const add = () => { const name = newCompanyName.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "調査して追記", holidays: "", employeeVoice: "", studentVoice: "", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [], companyOverview: "", founded: "", capital: "", employeeCount: "", avgAge: "", programs: "", payOvertimeSystem: "", workHoursHolidays: "", industryAvgSalary: "", revenue: "", customers: "", competitiveEdge: "", outlook: "", recruitingInfo: "", annualHiringTrend: "" }; setCompanies((current) => [...current, company]); setNewCompanyName(""); setSelected(company); toast.success(`${name}を追加しました`); };
   const save = (updated: Company) => { setCompanies((current) => current.map((c) => c.id === updated.id ? { ...updated, updatedAt: today } : c)); setSelected({ ...updated, updatedAt: today }); toast.success("企業情報を保存しました"); };
   const updateStage = (id: string, stage: CompanyStage) => setCompanies((current) => current.map((c) => c.id === id ? { ...c, stage, updatedAt: today } : c));
 
@@ -383,6 +429,99 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
     {selected && <CompanyEditor company={selected} cards={cards} onClose={() => setSelected(null)} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); setSelected(null); toast.success("企業を削除しました"); }} />}
   </div>;
 }
+// One case per CompanyFieldKey, each returning the exact `<label>` the
+// basic-info form used to have inline — pulled out so the form can render
+// them in whatever order the user picked (see FieldOrderManager) instead of
+// one fixed sequence.
+function renderCompanyField(key: CompanyFieldKey, draft: Company, update: (key: keyof Company, value: string | number | null | string[]) => void) {
+  switch (key) {
+    case "industry":
+      return <label key={key}>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label>;
+    case "interest":
+      return <label key={key}>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label>;
+    case "interestScore":
+      return <label key={key}>志望度スコア<input type="number" value={draft.interestScore ?? ""} placeholder="任意の点数" onChange={(e) => update("interestScore", e.target.value ? Number(e.target.value) : null)} /></label>;
+    case "startingSalary":
+      return <label key={key}>初任給（万円）<input type="number" value={draft.startingSalary ?? ""} placeholder="未入力" onChange={(e) => update("startingSalary", e.target.value ? Number(e.target.value) : null)} /></label>;
+    case "avgSalaryGraduate":
+      return <label key={key}>平均年収・学部卒（万円）<input type="number" value={draft.avgSalaryGraduate ?? ""} placeholder="未入力" onChange={(e) => update("avgSalaryGraduate", e.target.value ? Number(e.target.value) : null)} /></label>;
+    case "location":
+      return <label key={key} className="wide">勤務地<AutoGrowTextarea value={draft.location} onChange={(e) => update("location", e.target.value)} placeholder="本社・支社など複数あれば改行して記入" /></label>;
+    case "business":
+      return <label key={key} className="wide">事業内容<AutoGrowTextarea value={draft.business} onChange={(e) => update("business", e.target.value)} placeholder="何をやっている会社か、代表的な製品・サービスなど" /></label>;
+    case "benefits":
+      return <label key={key} className="wide">福利厚生<AutoGrowTextarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label>;
+    case "holidays":
+      return <label key={key} className="wide">年間休日・休暇制度<AutoGrowTextarea value={draft.holidays} onChange={(e) => update("holidays", e.target.value)} placeholder="年間休日数、有給消化率、独自の休暇制度など" /></label>;
+    case "philosophy":
+      return <label key={key} className="wide">企業理念<AutoGrowTextarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label>;
+    case "person":
+      return <label key={key} className="wide">求める人物像<AutoGrowTextarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label>;
+    case "employeeVoice":
+      return <label key={key} className="wide">社員の声<AutoGrowTextarea value={draft.employeeVoice} onChange={(e) => update("employeeVoice", e.target.value)} placeholder="OB・OG訪問や座談会で聞いた、社員のリアルな声" /></label>;
+    case "studentVoice":
+      return <label key={key} className="wide">学生の声<AutoGrowTextarea value={draft.studentVoice} onChange={(e) => update("studentVoice", e.target.value)} placeholder="就活サイトの口コミなど、学生側から見た評判" /></label>;
+    case "strengthFit":
+      return <label key={key} className="wide">自分の強みが生かせるか<AutoGrowTextarea value={draft.strengthFit} onChange={(e) => update("strengthFit", e.target.value)} placeholder="自分のどんな強み・経験が活かせそうか" /></label>;
+    case "notes":
+      return <label key={key} className="wide">自分のメモ<AutoGrowTextarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label>;
+    case "sources":
+      return <label key={key} className="wide">参考URL（1行に1つ）<AutoGrowTextarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label>;
+    case "tags":
+      return <label key={key} className="wide">タグ（キーワードにも使えます）<TagEditor tags={draft.tags ?? []} onChange={(tags) => update("tags", tags)} /></label>;
+    case "companyOverview":
+      return <label key={key} className="wide">企業概要<AutoGrowTextarea value={draft.companyOverview} onChange={(e) => update("companyOverview", e.target.value)} placeholder="会社の基本的な概要・特徴" /></label>;
+    case "founded":
+      return <label key={key}>設立<input value={draft.founded} onChange={(e) => update("founded", e.target.value)} placeholder="例：1889年" /></label>;
+    case "capital":
+      return <label key={key}>資本金<input value={draft.capital} onChange={(e) => update("capital", e.target.value)} placeholder="例：1,000万円" /></label>;
+    case "employeeCount":
+      return <label key={key}>社員数<input value={draft.employeeCount} onChange={(e) => update("employeeCount", e.target.value)} placeholder="例：6,500名（連結）" /></label>;
+    case "avgAge":
+      return <label key={key}>平均年齢<input value={draft.avgAge} onChange={(e) => update("avgAge", e.target.value)} placeholder="例：38.2歳" /></label>;
+    case "programs":
+      return <label key={key} className="wide">社内制度<AutoGrowTextarea value={draft.programs} onChange={(e) => update("programs", e.target.value)} placeholder="フレックス、リモートワーク、研修制度など" /></label>;
+    case "payOvertimeSystem":
+      return <label key={key} className="wide">給与・諸手当＋残業代の制度<AutoGrowTextarea value={draft.payOvertimeSystem} onChange={(e) => update("payOvertimeSystem", e.target.value)} placeholder="昇給・賞与、各種手当、みなし残業の有無など" /></label>;
+    case "workHoursHolidays":
+      return <label key={key} className="wide">勤務時間＋休日<AutoGrowTextarea value={draft.workHoursHolidays} onChange={(e) => update("workHoursHolidays", e.target.value)} placeholder="始業・終業時刻、週休制、土日祝など" /></label>;
+    case "industryAvgSalary":
+      return <label key={key}>業界の平均給与<input value={draft.industryAvgSalary} onChange={(e) => update("industryAvgSalary", e.target.value)} placeholder="例：業界平均600万円" /></label>;
+    case "revenue":
+      return <label key={key}>売上高<input value={draft.revenue} onChange={(e) => update("revenue", e.target.value)} placeholder="例：1兆2,000億円（連結）" /></label>;
+    case "customers":
+      return <label key={key} className="wide">お客様は誰か<AutoGrowTextarea value={draft.customers} onChange={(e) => update("customers", e.target.value)} placeholder="主な顧客層・取引先など" /></label>;
+    case "competitiveEdge":
+      return <label key={key} className="wide">同業内の強み・弱み<AutoGrowTextarea value={draft.competitiveEdge} onChange={(e) => update("competitiveEdge", e.target.value)} placeholder="競合他社と比べた強み・弱み" /></label>;
+    case "outlook":
+      return <label key={key} className="wide">将来性<AutoGrowTextarea value={draft.outlook} onChange={(e) => update("outlook", e.target.value)} placeholder="業界・会社としての今後の見通し" /></label>;
+    case "recruitingInfo":
+      return <label key={key} className="wide">採用情報<AutoGrowTextarea value={draft.recruitingInfo} onChange={(e) => update("recruitingInfo", e.target.value)} placeholder="採用人数、募集要項、選考プロセス、応募・選考時の提出書類など（初任給は上の「初任給」欄へ）" /></label>;
+    case "annualHiringTrend":
+      return <label key={key} className="wide">例年の新卒採用人数や倍率<AutoGrowTextarea value={draft.annualHiringTrend} onChange={(e) => update("annualHiringTrend", e.target.value)} placeholder="過去の採用人数・応募倍率の推移など" /></label>;
+  }
+}
+
+// Lets the person drag the basic-info fields (業界, 年収, 企業理念, …) into
+// whatever order matters most to them — the result is saved globally (see
+// cc_company_field_order) and used for every company, not just this one.
+function FieldOrderManager({ order, onChange, onClose }: { order: CompanyFieldKey[]; onChange: (order: CompanyFieldKey[]) => void; onClose: () => void }) {
+  const drag = useDragReorder(".field-order-row");
+  return <div className="modal-backdrop" onClick={onClose}>
+    <section className="editor-modal field-order-modal" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-header"><div><p className="eyebrow">企業研究</p><h2>項目の表示順</h2></div><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={19} /></button></div>
+      <p className="category-manager-hint">長押ししてドラッグすると順番を変えられます。ここで決めた順番は、すべての企業のページに共通で使われます（企業名は常に先頭です）。</p>
+      <div className="field-order-list" ref={drag.containerRef} onPointerMove={(event) => drag.move(event, (next) => onChange(next as CompanyFieldKey[]))} onPointerUp={drag.end} onPointerCancel={drag.end}>
+        {order.map((key) => <div
+          key={key}
+          className={`field-order-row ${drag.draggingId === key ? "dragging" : ""}`}
+          onPointerDown={(event) => drag.start(key, event, order)}
+        ><GripVertical size={15} /><span>{COMPANY_FIELD_LABELS[key]}</span></div>)}
+      </div>
+    </section>
+  </div>;
+}
+
 function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company: Company; cards: InterviewCard[]; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) {
   const [draft, setDraft] = useState(company);
   // The modal grew a lot once ステータス, 振り返りメモ and 紐づくカード were
@@ -395,6 +534,12 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
   // mount (when this element isn't rendered yet).
   const stageHint = useEdgeScrollHint<HTMLDivElement>([tab]);
   const update = (key: keyof Company, value: string | number | null | string[]) => setDraft((d) => ({ ...d, [key]: value }));
+  // One global order for every company (see FieldOrderManager) — normalized
+  // against the current field list so a future new field still shows up
+  // (appended at the end) even if it isn't in someone's already-saved order.
+  const [fieldOrder, setFieldOrder] = usePersisted<CompanyFieldKey[]>("cc_company_field_order", DEFAULT_COMPANY_FIELD_ORDER);
+  const normalizedFieldOrder = [...fieldOrder.filter((k) => DEFAULT_COMPANY_FIELD_ORDER.includes(k)), ...DEFAULT_COMPANY_FIELD_ORDER.filter((k) => !fieldOrder.includes(k))];
+  const [reorderingFields, setReorderingFields] = useState(false);
   const [logDraft, setLogDraft] = useState({ date: today, note: "" });
   const logs = draft.interviewLogs ?? [];
   const addLog = () => {
@@ -435,13 +580,14 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
       window.prompt("このリンクをコピーしてください（自分のメモは含まれません）", url);
     }
   };
-  return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">企業メモ</p><h2>{draft.name}</h2></div><button className="icon-button" aria-label="閲覧専用リンクを共有" title="閲覧専用リンクを共有" onClick={shareLink}><Link2 size={17} /></button><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={19} /></button></div>
+  return <>
+  <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">企業メモ</p><h2>{draft.name}</h2></div><button className="icon-button" aria-label="項目の表示順を編集" title="項目の表示順を編集" onClick={() => setReorderingFields(true)}><ArrowUpDown size={17} /></button><button className="icon-button" aria-label="閲覧専用リンクを共有" title="閲覧専用リンクを共有" onClick={shareLink}><Link2 size={17} /></button><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={19} /></button></div>
     <div className="tab-scroll-wrap"><div className="segmented-tabs editor-tabs" ref={tabsHint.ref}>
       <button className={tab === "basic" ? "active" : ""} onClick={() => setTab("basic")}>基本情報</button>
       <button className={tab === "progress" ? "active" : ""} onClick={() => setTab("progress")}>進捗・メモ{logs.length > 0 && <small>{logs.length}</small>}</button>
       <button className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>紐づくカード{linkedCards.length > 0 && <small>{linkedCards.length}</small>}</button>
     </div>{tabsHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
-    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label><label>業界<input value={draft.industry} onChange={(e) => update("industry", e.target.value)} /></label><label>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>志望度スコア<input type="number" value={draft.interestScore ?? ""} placeholder="任意の点数" onChange={(e) => update("interestScore", e.target.value ? Number(e.target.value) : null)} /></label><label>初任給（万円）<input type="number" value={draft.startingSalary ?? ""} placeholder="未入力" onChange={(e) => update("startingSalary", e.target.value ? Number(e.target.value) : null)} /></label><label>平均年収・学部卒（万円）<input type="number" value={draft.avgSalaryGraduate ?? ""} placeholder="未入力" onChange={(e) => update("avgSalaryGraduate", e.target.value ? Number(e.target.value) : null)} /></label><label className="wide">勤務地<AutoGrowTextarea value={draft.location} onChange={(e) => update("location", e.target.value)} placeholder="本社・支社など複数あれば改行して記入" /></label><label className="wide">事業内容<AutoGrowTextarea value={draft.business} onChange={(e) => update("business", e.target.value)} placeholder="何をやっている会社か、代表的な製品・サービスなど" /></label><label className="wide">福利厚生<AutoGrowTextarea value={draft.benefits} onChange={(e) => update("benefits", e.target.value)} /></label><label className="wide">年間休日・休暇制度<AutoGrowTextarea value={draft.holidays} onChange={(e) => update("holidays", e.target.value)} placeholder="年間休日数、有給消化率、独自の休暇制度など" /></label><label className="wide">企業理念<AutoGrowTextarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label><label className="wide">求める人物像<AutoGrowTextarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label><label className="wide">自分の強みが生かせるか<AutoGrowTextarea value={draft.strengthFit} onChange={(e) => update("strengthFit", e.target.value)} placeholder="自分のどんな強み・経験が活かせそうか" /></label><label className="wide">自分のメモ<AutoGrowTextarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} /></label><label className="wide">参考URL（1行に1つ）<AutoGrowTextarea value={draft.sources.join("\n")} onChange={(e) => update("sources", e.target.value.split("\n").filter(Boolean))} /></label><label className="wide">タグ（キーワードにも使えます）<TagEditor tags={draft.tags ?? []} onChange={(tags) => update("tags", tags)} /></label></div>}
+    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label>{normalizedFieldOrder.map((key) => renderCompanyField(key, draft, update))}</div>}
     {tab === "progress" && <>
       {/* Colored the same way as the stage-tag it produces on the company
           list (STAGE_TONE) — a solid fill of that tone instead of the
@@ -464,7 +610,9 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
         {!linkedCards.length && <p className="child-empty-hint">面接カードの編集画面から、この企業向けの質問を紐づけられます。</p>}
       </div>
     </div>}
-    <div className="modal-footer"><button className="danger-button" onClick={() => { if (window.confirm(`「${draft.name}」を削除しますか？この操作は取り消せません。`)) onDelete(); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>;
+    <div className="modal-footer"><button className="danger-button" onClick={() => { if (window.confirm(`「${draft.name}」を削除しますか？この操作は取り消せません。`)) onDelete(); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>
+  {reorderingFields && <FieldOrderManager order={normalizedFieldOrder} onChange={setFieldOrder} onClose={() => setReorderingFields(false)} />}
+  </>;
 }
 
 // Free-form tags for a company (see ResearchScreen's tag filter row) — unlike

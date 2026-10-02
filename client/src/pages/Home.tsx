@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetSta
 import { strToU8 } from "fflate";
 import {
   AlertCircle, ArrowLeft, ArrowUpDown, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, GripVertical, Home as HomeIcon, Lightbulb, Link2, Menu, MessageCircleQuestion, MessageSquare, Mic, Moon, Pause, Pencil, PictureInPicture2, Play, Plus,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, Home as HomeIcon, Lightbulb, Link2, Menu, MessageCircleQuestion, MessageSquare, Mic, Moon, Pause, Pencil, PictureInPicture2, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Tag, Target, Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -34,6 +34,13 @@ export const STAGE_TONE: Record<CompanyStage, "neutral" | "info" | "progress" | 
 // A single dated journal entry — "面接後の振り返りメモ" — free-form notes the
 // person leaves for themselves after an interview or a stage change.
 export type InterviewLogEntry = { id: string; date: string; note: string };
+// Per-field metadata shown as two small toggles next to each basic-info
+// field (see CompanyEditor's basic tab): "覚えた" is just a personal
+// checklist (have I actually learned this, for interview prep), while
+// "確定" tracks whether the value is confirmed/reliable or just a
+// provisional guess typed in to fill the blank for now — the two are
+// independent (you can have memorized a value you still want to verify).
+export type FieldStatus = { memorized: boolean; confirmed: boolean };
 export type Company = {
   id: string; name: string; industry: string; interest: number; interestScore: number | null;
   startingSalary: number | null; avgSalaryGraduate: number | null; business: string; strengthFit: string;
@@ -44,6 +51,7 @@ export type Company = {
   revenue: string; customers: string; competitiveEdge: string; outlook: string; recruitingInfo: string;
   annualHiringTrend: string;
   stage?: CompanyStage; interviewLogs?: InterviewLogEntry[]; tags?: string[];
+  fieldStatus?: Partial<Record<CompanyFieldKey, FieldStatus>>;
 };
 // The basic-info fields shown in CompanyEditor, in a user-customizable
 // order (see FieldOrderManager) — one global order applied to every
@@ -177,6 +185,21 @@ const BACKUP_FIELD_KEYS: Record<keyof CloudPayload, string> = {
 function load<T>(key: string, fallback: T): T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; } }
 function usePersisted<T>(key: string, initial: T) { const [value, setValue] = useState<T>(() => load(key, initial)); useEffect(() => localStorage.setItem(key, JSON.stringify(value)), [key, value]); return [value, setValue] as const; }
 function money(value: number | null) { return value ? `${value.toLocaleString()}万円` : "未入力"; }
+// Swaps an item with its neighbor one slot up or down — the shared step
+// behind every ↑↓ reorder button in this file (company list, ranking board,
+// field order). Long-press-drag used to do this job everywhere, but it
+// turned out to be too unreliable across real touch hardware (see moveCard
+// in InterviewScreen for the first place this was learned); a plain tap
+// always works the same way, at the cost of one tap per step instead of a
+// single drag. Out of bounds is a no-op so callers can wire a disabled
+// button straight to this without a separate bounds check.
+function moveItem<T>(arr: T[], index: number, direction: -1 | 1): T[] {
+  const target = index + direction;
+  if (index < 0 || index >= arr.length || target < 0 || target >= arr.length) return arr;
+  const next = [...arr];
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
+}
 // A handful of horizontally-scrolling rows (stage picker, category filter,
 // tab bars) can silently clip choices off the right edge with nothing on
 // screen to suggest there's more — measured rather than assumed, since
@@ -343,8 +366,6 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
   // explicit override (see `manualOrder` above), or the next render's
   // auto-sort would immediately erase it.
   const reorderRanking = (visibleIds: string[]) => { setManualOrder(visibleIds); reorderCompanies(visibleIds); };
-  const companyDrag = useDragReorder(".company-card");
-  const rankDrag = useDragReorder(".ranking-row");
 
   return <div className="screen">
     <Header title="企業研究" eyebrow="リサーチ" onMenu={() => onNavigate("settings")} />
@@ -361,14 +382,15 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
       {/* Hidden until at least one company actually has a tag — an empty
           "すべて" chip row with nothing to filter would just be noise. */}
       {allTags.length > 0 && <div className="chip-row">{["すべて", ...allTags].map((item) => <button key={item} className={`chip ${tagFilter === item ? "selected" : ""}`} onClick={() => setTagFilter(item)}>{item === "すべて" ? item : `#${item}`}</button>)}</div>}
-      <div className="card-filter"><span>{searchQuery || tagFilter !== "すべて" ? `${filtered.length} / ${companies.length}社` : `${companies.length}社`}</span><span className="hint"><GripVertical size={14} />長押しで並び替え</span></div>
-      <div className="company-list" ref={companyDrag.containerRef} onPointerMove={(event) => companyDrag.move(event, reorderCompanies)} onPointerUp={companyDrag.end} onPointerCancel={companyDrag.end}>
-        {filtered.map((c) => <button
-          key={c.id}
-          className={`company-card ${companyDrag.draggingId === c.id ? "dragging" : ""}`}
-          onPointerDown={(event) => companyDrag.start(c.id, event, filtered.map((x) => x.id))}
-          onClick={() => { if (companyDrag.justDraggedRef.current) return; setSelected(c); }}
-        ><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className={`stage-tag stage-tag-${STAGE_TONE[stageOf(c)]}`}>{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div>{c.tags && c.tags.length > 0 && <div className="tag-chip-row">{c.tags.map((tag) => <span key={tag} className="tag-chip-plain">#{tag}</span>)}</div>}</div><ChevronRight size={18} /></button>)}
+      <div className="card-filter"><span>{searchQuery || tagFilter !== "すべて" ? `${filtered.length} / ${companies.length}社` : `${companies.length}社`}</span><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span></div>
+      <div className="company-list">
+        {filtered.map((c, index) => <div key={c.id} className="company-card">
+          <button className="company-card-tap" onClick={() => setSelected(c)}><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className={`stage-tag stage-tag-${STAGE_TONE[stageOf(c)]}`}>{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div>{c.tags && c.tags.length > 0 && <div className="tag-chip-row">{c.tags.map((tag) => <span key={tag} className="tag-chip-plain">#{tag}</span>)}</div>}</div><ChevronRight size={18} /></button>
+          <div className="card-order-buttons-col">
+            <button className="order-step-button" aria-label="上に移動" disabled={index === 0} onClick={() => reorderCompanies(moveItem(filtered.map((x) => x.id), index, -1))}><ChevronUp size={14} /></button>
+            <button className="order-step-button" aria-label="下に移動" disabled={index === filtered.length - 1} onClick={() => reorderCompanies(moveItem(filtered.map((x) => x.id), index, 1))}><ChevronDown size={14} /></button>
+          </div>
+        </div>)}
         {!filtered.length && <div className="empty-state large"><Search size={24} />「{searchQuery}」に一致する企業がありません。</div>}
       </div>
     </> : mode === "progress" ? <>
@@ -413,16 +435,18 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
         {!companies.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}
       </div>
     </> : <>
-      <section className="summary-banner"><div><p className="eyebrow light">ランキング</p><h2>企業を比べて、<br />志望度を整理する</h2><p>ランキングは志望度などから自動で並び替え、長押しで自分の順位に調整できます。</p></div><Trophy size={54} strokeWidth={1.5} /></section>
+      <section className="summary-banner"><div><p className="eyebrow light">ランキング</p><h2>企業を比べて、<br />志望度を整理する</h2><p>ランキングは志望度などから自動で並び替え、↑↓ボタンで自分の順位に調整できます。</p></div><Trophy size={54} strokeWidth={1.5} /></section>
       <div className="chip-row">{industries.map((item) => <button key={item} className={`chip ${industry === item ? "selected" : ""}`} onClick={() => setIndustry(item)}>{item}</button>)}</div>
       <div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => { setRank("interest"); setManualOrder(null); }}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => { setRank("salary"); setManualOrder(null); }}><span className="yen-icon">¥</span>平均年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => { setRank("benefits"); setManualOrder(null); }}><span>＋</span>福利厚生</button></div>
-      <div className="card-filter"><span className="hint"><GripVertical size={14} />長押しで並び替え</span></div>
-      <div className="ranking-list" ref={rankDrag.containerRef} onPointerMove={(event) => rankDrag.move(event, reorderRanking)} onPointerUp={rankDrag.end} onPointerCancel={rankDrag.end}>
-        {sorted.map((c, i) => <div
-          key={c.id}
-          className={`ranking-row ${rankDrag.draggingId === c.id ? "dragging" : ""}`}
-          onPointerDown={(event) => rankDrag.start(c.id, event, sorted.map((x) => x.id))}
-        ><div className={`rank-number rank-${i + 1}`}>{i + 1}</div><div className="company-avatar small">{c.name.slice(0, 1)}</div><button className="ranking-info" onClick={() => { if (rankDrag.justDraggedRef.current) return; setSelected(c); }}><strong>{c.name}</strong><span>{c.industry} · {c.location}</span></button><div className="ranking-value"><small>{rank === "interest" ? "志望度" : rank === "salary" ? "平均年収" : "福利厚生"}</small><strong>{rank === "interest" ? `★ ${c.interest}/5` : rank === "salary" ? money(c.avgSalaryGraduate) : c.benefits === "情報を追加" ? "未入力" : "登録済み"}</strong></div></div>)}
+      <div className="card-filter"><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span></div>
+      <div className="ranking-list">
+        {sorted.map((c, i) => <div key={c.id} className="ranking-row">
+          <div className={`rank-number rank-${i + 1}`}>{i + 1}</div><div className="company-avatar small">{c.name.slice(0, 1)}</div><button className="ranking-info" onClick={() => setSelected(c)}><strong>{c.name}</strong><span>{c.industry} · {c.location}</span></button><div className="ranking-value"><small>{rank === "interest" ? "志望度" : rank === "salary" ? "平均年収" : "福利厚生"}</small><strong>{rank === "interest" ? `★ ${c.interest}/5` : rank === "salary" ? money(c.avgSalaryGraduate) : c.benefits === "情報を追加" ? "未入力" : "登録済み"}</strong></div>
+          <div className="card-order-buttons-col">
+            <button className="order-step-button" aria-label="上に移動" disabled={i === 0} onClick={() => reorderRanking(moveItem(sorted.map((x) => x.id), i, -1))}><ChevronUp size={14} /></button>
+            <button className="order-step-button" aria-label="下に移動" disabled={i === sorted.length - 1} onClick={() => reorderRanking(moveItem(sorted.map((x) => x.id), i, 1))}><ChevronDown size={14} /></button>
+          </div>
+        </div>)}
         {!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}
       </div>
     </>}
@@ -502,21 +526,24 @@ function renderCompanyField(key: CompanyFieldKey, draft: Company, update: (key: 
   }
 }
 
-// Lets the person drag the basic-info fields (業界, 年収, 企業理念, …) into
+// Lets the person move the basic-info fields (業界, 年収, 企業理念, …) into
 // whatever order matters most to them — the result is saved globally (see
 // cc_company_field_order) and used for every company, not just this one.
+// Used to be press-and-drag; ↑↓ buttons replaced that (see moveItem) because
+// drag kept misfiring — a tap always lands.
 function FieldOrderManager({ order, onChange, onClose }: { order: CompanyFieldKey[]; onChange: (order: CompanyFieldKey[]) => void; onClose: () => void }) {
-  const drag = useDragReorder(".field-order-row");
   return <div className="modal-backdrop" onClick={onClose}>
     <section className="editor-modal field-order-modal" onClick={(event) => event.stopPropagation()}>
       <div className="modal-header"><div><p className="eyebrow">企業研究</p><h2>項目の表示順</h2></div><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={19} /></button></div>
-      <p className="category-manager-hint">長押ししてドラッグすると順番を変えられます。ここで決めた順番は、すべての企業のページに共通で使われます（企業名は常に先頭です）。</p>
-      <div className="field-order-list" ref={drag.containerRef} onPointerMove={(event) => drag.move(event, (next) => onChange(next as CompanyFieldKey[]))} onPointerUp={drag.end} onPointerCancel={drag.end}>
-        {order.map((key) => <div
-          key={key}
-          className={`field-order-row ${drag.draggingId === key ? "dragging" : ""}`}
-          onPointerDown={(event) => drag.start(key, event, order)}
-        ><GripVertical size={15} /><span>{COMPANY_FIELD_LABELS[key]}</span></div>)}
+      <p className="category-manager-hint">↑↓ボタンで順番を変えられます。ここで決めた順番は、すべての企業のページに共通で使われます（企業名は常に先頭です）。</p>
+      <div className="field-order-list">
+        {order.map((key, index) => <div key={key} className="field-order-row">
+          <span>{COMPANY_FIELD_LABELS[key]}</span>
+          <div className="card-order-buttons-col">
+            <button className="order-step-button" aria-label="上に移動" disabled={index === 0} onClick={() => onChange(moveItem(order, index, -1))}><ChevronUp size={14} /></button>
+            <button className="order-step-button" aria-label="下に移動" disabled={index === order.length - 1} onClick={() => onChange(moveItem(order, index, 1))}><ChevronDown size={14} /></button>
+          </div>
+        </div>)}
       </div>
     </section>
   </div>;
@@ -534,6 +561,14 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
   // mount (when this element isn't rendered yet).
   const stageHint = useEdgeScrollHint<HTMLDivElement>([tab]);
   const update = (key: keyof Company, value: string | number | null | string[]) => setDraft((d) => ({ ...d, [key]: value }));
+  // Toggle either half of a field's 覚えた/確定 status independently — each
+  // starts at false until first touched, so existing companies (no
+  // fieldStatus saved yet) just read as "not memorized, not confirmed" for
+  // every field rather than needing a migration.
+  const setFieldStatus = (key: CompanyFieldKey, patch: Partial<FieldStatus>) => setDraft((d) => ({
+    ...d,
+    fieldStatus: { ...d.fieldStatus, [key]: { memorized: false, confirmed: false, ...d.fieldStatus?.[key], ...patch } },
+  }));
   // One global order for every company (see FieldOrderManager) — normalized
   // against the current field list so a future new field still shows up
   // (appended at the end) even if it isn't in someone's already-saved order.
@@ -587,7 +622,18 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
       <button className={tab === "progress" ? "active" : ""} onClick={() => setTab("progress")}>進捗・メモ{logs.length > 0 && <small>{logs.length}</small>}</button>
       <button className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>紐づくカード{linkedCards.length > 0 && <small>{linkedCards.length}</small>}</button>
     </div>{tabsHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
-    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label>{normalizedFieldOrder.map((key) => renderCompanyField(key, draft, update))}</div>}
+    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label>{normalizedFieldOrder.map((key) => {
+      const field = renderCompanyField(key, draft, update);
+      const isWide = typeof field.props.className === "string" && field.props.className.includes("wide");
+      const status = draft.fieldStatus?.[key];
+      return <div key={key} className={`field-with-status ${isWide ? "wide" : ""}`}>
+        {field}
+        <div className="field-status-row">
+          <button type="button" className={`field-status-chip ${status?.memorized ? "active" : ""}`} aria-pressed={!!status?.memorized} onClick={() => setFieldStatus(key, { memorized: !status?.memorized })}><Check size={11} />覚えた</button>
+          <button type="button" className={`field-status-chip confirmed ${status?.confirmed ? "active" : ""}`} aria-pressed={!!status?.confirmed} onClick={() => setFieldStatus(key, { confirmed: !status?.confirmed })}><CheckCircle2 size={11} />{status?.confirmed ? "確定情報" : "仮入力"}</button>
+        </div>
+      </div>;
+    })}</div>}
     {tab === "progress" && <>
       {/* Colored the same way as the stage-tag it produces on the company
           list (STAGE_TONE) — a solid fill of that tone instead of the
@@ -702,88 +748,6 @@ function CardColorPicker({ value, onChange }: { value: CardColor; onChange: (col
 // on the category chips themselves (see startCategoryDrag/moveCategoryDrag/
 // endCategoryDrag in InterviewScreen) — this modal is rename-only now.
 const LONG_PRESS_MS = 350;
-
-// Generic long-press-to-drag reordering: press an item to lift it, drag to
-// the slot it should land in. Same mechanics as the category chips (see
-// startCategoryDrag/moveCategoryDrag/endCategoryDrag in InterviewScreen) —
-// pulled into one hook here for the company list and ranking list, which
-// need the identical pattern twice more: pointer capture goes on the STABLE
-// container (never the item itself, which React reorders mid-drag — losing
-// capture on a reparented element would silently strand the drag), and the
-// live order lives in a ref so a fast pointermove never reads a stale array
-// from a not-yet-flushed setState.
-function useDragReorder(itemSelector: string) {
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const dragState = useRef<{ id: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean; el: HTMLElement } | null>(null);
-  const justDraggedRef = useRef(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const orderRef = useRef<string[]>([]);
-
-  const start = (id: string, event: React.PointerEvent, visibleIds: string[]) => {
-    const pointerId = event.pointerId;
-    const el = event.currentTarget as HTMLElement;
-    const timer = setTimeout(() => {
-      if (dragState.current) {
-        dragState.current.dragging = true;
-        justDraggedRef.current = true;
-        orderRef.current = visibleIds;
-        setDraggingId(id);
-        // Only once the hold is confirmed as a drag (not on every touch) do
-        // we take this item out of the native touch-scroll gesture — see
-        // the comment above .flashcard-wrap in index.css for why this can't
-        // just be a permanent CSS rule without breaking ordinary scrolling.
-        dragState.current.el.style.touchAction = "none";
-        containerRef.current?.setPointerCapture(pointerId);
-      }
-    }, LONG_PRESS_MS);
-    dragState.current = { id, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false, el };
-  };
-  const move = (event: React.PointerEvent, onReorder: (nextOrder: string[]) => void) => {
-    const state = dragState.current;
-    if (!state) return;
-    const deltaX = event.clientX - state.startX;
-    const deltaY = event.clientY - state.startY;
-    if (!state.dragging) {
-      // A quick swipe (e.g. scrolling the page) cancels the pending
-      // long-press instead of hijacking the gesture.
-      if (Math.hypot(deltaX, deltaY) > 12 && state.timer) { clearTimeout(state.timer); dragState.current = null; }
-      return;
-    }
-    // `touchAction: "none"` (set in `start`, once the long-press fires) is
-    // only a hint — on some browsers (notably iOS Safari) a touch's scroll
-    // vs. no-scroll fate can already be decided before that style change
-    // takes effect, so the page would start scrolling out from under the
-    // drag the moment the finger actually moves. Calling preventDefault on
-    // every move while we're in drag mode is what actually, reliably stops
-    // that native scroll from hijacking the gesture.
-    event.preventDefault();
-    const items = Array.from(containerRef.current?.querySelectorAll<HTMLElement>(itemSelector) ?? []);
-    if (!items.length) return;
-    let closestIndex = -1;
-    let closestDist = Infinity;
-    items.forEach((el, i) => {
-      const rect = el.getBoundingClientRect();
-      const dist = Math.hypot(event.clientX - (rect.left + rect.width / 2), event.clientY - (rect.top + rect.height / 2));
-      if (dist < closestDist) { closestDist = dist; closestIndex = i; }
-    });
-    const order = orderRef.current;
-    const fromIndex = order.indexOf(state.id);
-    if (fromIndex === -1 || closestIndex === -1 || closestIndex === fromIndex) return;
-    const nextOrder = [...order];
-    nextOrder.splice(fromIndex, 1);
-    nextOrder.splice(closestIndex, 0, state.id);
-    orderRef.current = nextOrder;
-    onReorder(nextOrder);
-  };
-  const end = () => {
-    if (dragState.current?.timer) clearTimeout(dragState.current.timer);
-    if (dragState.current) dragState.current.el.style.touchAction = "";
-    dragState.current = null;
-    setDraggingId(null);
-    setTimeout(() => { justDraggedRef.current = false; }, 0);
-  };
-  return { draggingId, justDraggedRef, containerRef, start, move, end };
-}
 
 function CategoryManager({ categories, onRename, onClose }: { categories: string[]; onRename: (oldName: string, newName: string) => void; onClose: () => void }) {
   const [editingName, setEditingName] = useState<string | null>(null);

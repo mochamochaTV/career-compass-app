@@ -3,7 +3,7 @@ import { strToU8 } from "fflate";
 import {
   AlertCircle, ArrowLeft, ArrowUpDown, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, Home as HomeIcon, Lightbulb, Link2, Menu, MessageCircleQuestion, MessageSquare, Mic, Moon, Pause, Pencil, PictureInPicture2, Play, Plus,
-  RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Tag, Target, Trash2, Trophy, X,
+  RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Tag, Target, Trash2, Trophy, Users, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createBackupZip, parseBackupBytes } from "@/lib/backup";
@@ -52,6 +52,8 @@ export type Company = {
   annualHiringTrend: string;
   stage?: CompanyStage; interviewLogs?: InterviewLogEntry[]; tags?: string[];
   fieldStatus?: Partial<Record<CompanyFieldKey, FieldStatus>>;
+  // 面接カードのうち、この企業に「紐づけず」に参照だけ追加したもの（自己PRなど使いまわすカード）
+  extraCardIds?: string[];
 };
 // The basic-info fields shown in CompanyEditor, in a user-customizable
 // order (see FieldOrderManager) — one global order applied to every
@@ -144,6 +146,12 @@ export type PitchTemplate = { id: string; title: string; body: string; updatedAt
 // a specific company's interview.
 export type ReverseQuestion = { id: string; companyId: string | null; question: string; answer: string; updatedAt: string };
 
+// グループディスカッション (GD) 対策。GdTip は「気を付けること」の1項目
+// （企業を問わず共通）、GdTheme は1つのテーマ — companyId がある場合は
+// 「その企業で過去に出たテーマ」、null の場合は企業を問わない練習用テーマ。
+export type GdTip = { id: string; text: string; updatedAt: string };
+export type GdTheme = { id: string; companyId: string | null; theme: string; summary: string; myThoughts: string; updatedAt: string };
+
 // UI text size, applied app-wide as a CSS zoom on the whole shell (see Home())
 // rather than rewriting every literal px font-size in index.css to a
 // calc()'d variable — the app's type scale is almost entirely fixed px, so a
@@ -169,7 +177,7 @@ const starterSchedule: ScheduleItem[] = [
   { id: "task-3", title: "ES提出期限を登録", date: "2026-09-20", time: "23:59", category: "選考", done: false },
 ];
 
-type CloudPayload = { companies?: Company[]; cards?: InterviewCard[]; schedule?: ScheduleItem[]; pitchTemplates?: PitchTemplate[]; reverseQuestions?: ReverseQuestion[]; cardCategories?: string[] };
+type CloudPayload = { companies?: Company[]; cards?: InterviewCard[]; schedule?: ScheduleItem[]; pitchTemplates?: PitchTemplate[]; reverseQuestions?: ReverseQuestion[]; cardCategories?: string[]; gdTips?: GdTip[]; gdThemes?: GdTheme[] };
 // Maps each backup field to the localStorage key it lives under — the two
 // don't always match (cc_pitch_templates vs. pitchTemplates), so backup/
 // restore share this table instead of each guessing at the other's naming.
@@ -180,6 +188,8 @@ const BACKUP_FIELD_KEYS: Record<keyof CloudPayload, string> = {
   pitchTemplates: "cc_pitch_templates",
   reverseQuestions: "cc_reverse_questions",
   cardCategories: "cc_card_categories",
+  gdTips: "cc_gd_tips",
+  gdThemes: "cc_gd_themes",
 };
 
 function load<T>(key: string, fallback: T): T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; } }
@@ -332,6 +342,10 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newIndustry, setNewIndustry] = useState("ゲーム");
   const [selected, setSelected] = useState<Company | null>(null);
+  // 企業詳細は全画面ページ — 開く前の一覧のスクロール位置を覚えておき、戻ったときに復元する。
+  const listScroll = useRef(0);
+  const openCompany = (c: Company) => { listScroll.current = window.scrollY; setSelected(c); window.scrollTo(0, 0); };
+  const closeCompany = () => { setSelected(null); requestAnimationFrame(() => window.scrollTo(0, listScroll.current)); };
   // Free-form tags (see CompanyEditor's タグ field) are an orthogonal axis to
   // 業界 — "大手/ベンチャー", "リモート可" etc. don't fit the industry
   // dropdown, so they get their own filter row rather than being folded in.
@@ -345,7 +359,7 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
   // the current filter) so they still show up rather than vanishing.
   const sorted = manualOrder ? [...manualOrder.map((id) => filtered.find((c) => c.id === id)).filter((c): c is Company => !!c), ...autoSorted.filter((c) => !manualOrder.includes(c.id))] : autoSorted;
 
-  const add = () => { const name = newCompanyName.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "調査して追記", holidays: "", employeeVoice: "", studentVoice: "", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [], companyOverview: "", founded: "", capital: "", employeeCount: "", avgAge: "", programs: "", payOvertimeSystem: "", workHoursHolidays: "", industryAvgSalary: "", revenue: "", customers: "", competitiveEdge: "", outlook: "", recruitingInfo: "", annualHiringTrend: "" }; setCompanies((current) => [...current, company]); setNewCompanyName(""); setSelected(company); toast.success(`${name}を追加しました`); };
+  const add = () => { const name = newCompanyName.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "調査して追記", holidays: "", employeeVoice: "", studentVoice: "", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [], companyOverview: "", founded: "", capital: "", employeeCount: "", avgAge: "", programs: "", payOvertimeSystem: "", workHoursHolidays: "", industryAvgSalary: "", revenue: "", customers: "", competitiveEdge: "", outlook: "", recruitingInfo: "", annualHiringTrend: "" }; setCompanies((current) => [...current, company]); setNewCompanyName(""); openCompany(company); toast.success(`${name}を追加しました`); };
   const save = (updated: Company) => { setCompanies((current) => current.map((c) => c.id === updated.id ? { ...updated, updatedAt: today } : c)); setSelected({ ...updated, updatedAt: today }); toast.success("企業情報を保存しました"); };
   const updateStage = (id: string, stage: CompanyStage) => setCompanies((current) => current.map((c) => c.id === id ? { ...c, stage, updatedAt: today } : c));
 
@@ -367,6 +381,8 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
   // auto-sort would immediately erase it.
   const reorderRanking = (visibleIds: string[]) => { setManualOrder(visibleIds); reorderCompanies(visibleIds); };
 
+  if (selected) return <CompanyEditor key={selected.id} company={selected} companies={companies} cards={cards} onClose={closeCompany} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); closeCompany(); toast.success("企業を削除しました"); }} />;
+
   return <div className="screen">
     <Header title="企業研究" eyebrow="リサーチ" onMenu={() => onNavigate("settings")} />
     <div className="segmented-tabs research-tabs"><button className={mode === "research" ? "active" : ""} onClick={() => setMode("research")}><Search size={16} />調べる</button><button className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><Trophy size={16} />まとめ</button><button className={mode === "progress" ? "active" : ""} onClick={() => setMode("progress")}><Target size={16} />進捗</button></div>
@@ -385,7 +401,7 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
       <div className="card-filter"><span>{searchQuery || tagFilter !== "すべて" ? `${filtered.length} / ${companies.length}社` : `${companies.length}社`}</span><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span></div>
       <div className="company-list">
         {filtered.map((c, index) => <div key={c.id} className="company-card">
-          <button className="company-card-tap" onClick={() => setSelected(c)}><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className={`stage-tag stage-tag-${STAGE_TONE[stageOf(c)]}`}>{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div>{c.tags && c.tags.length > 0 && <div className="tag-chip-row">{c.tags.map((tag) => <span key={tag} className="tag-chip-plain">#{tag}</span>)}</div>}</div><ChevronRight size={18} /></button>
+          <button className="company-card-tap" onClick={() => openCompany(c)}><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className={`stage-tag stage-tag-${STAGE_TONE[stageOf(c)]}`}>{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div>{c.tags && c.tags.length > 0 && <div className="tag-chip-row">{c.tags.map((tag) => <span key={tag} className="tag-chip-plain">#{tag}</span>)}</div>}</div><ChevronRight size={18} /></button>
           <div className="card-order-buttons-col">
             <button className="order-step-button" aria-label="上に移動" disabled={index === 0} onClick={() => reorderCompanies(moveItem(filtered.map((x) => x.id), index, -1))}><ChevronUp size={14} /></button>
             <button className="order-step-button" aria-label="下に移動" disabled={index === filtered.length - 1} onClick={() => reorderCompanies(moveItem(filtered.map((x) => x.id), index, 1))}><ChevronDown size={14} /></button>
@@ -427,7 +443,7 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
           return <div className="stage-column" key={stage}>
             <div className="stage-column-heading"><h3>{stage}</h3><span className="count-badge">{inStage.length}</span></div>
             {inStage.map((c) => <div className="stage-company-row" key={c.id}>
-              <button className="stage-company-name" onClick={() => setSelected(c)}><strong>{c.name}</strong><span>{c.industry}</span></button>
+              <button className="stage-company-name" onClick={() => openCompany(c)}><strong>{c.name}</strong><span>{c.industry}</span></button>
               <select value={stageOf(c)} onChange={(event) => updateStage(c.id, event.target.value as CompanyStage)}>{COMPANY_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
             </div>)}
           </div>;
@@ -441,7 +457,7 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
       <div className="card-filter"><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span></div>
       <div className="ranking-list">
         {sorted.map((c, i) => <div key={c.id} className="ranking-row">
-          <div className={`rank-number rank-${i + 1}`}>{i + 1}</div><div className="company-avatar small">{c.name.slice(0, 1)}</div><button className="ranking-info" onClick={() => setSelected(c)}><strong>{c.name}</strong><span>{c.industry} · {c.location}</span></button><div className="ranking-value"><small>{rank === "interest" ? "志望度" : rank === "salary" ? "平均年収" : "福利厚生"}</small><strong>{rank === "interest" ? `★ ${c.interest}/5` : rank === "salary" ? money(c.avgSalaryGraduate) : c.benefits === "情報を追加" ? "未入力" : "登録済み"}</strong></div>
+          <div className={`rank-number rank-${i + 1}`}>{i + 1}</div><div className="company-avatar small">{c.name.slice(0, 1)}</div><button className="ranking-info" onClick={() => openCompany(c)}><strong>{c.name}</strong><span>{c.industry} · {c.location}</span></button><div className="ranking-value"><small>{rank === "interest" ? "志望度" : rank === "salary" ? "平均年収" : "福利厚生"}</small><strong>{rank === "interest" ? `★ ${c.interest}/5` : rank === "salary" ? money(c.avgSalaryGraduate) : c.benefits === "情報を追加" ? "未入力" : "登録済み"}</strong></div>
           <div className="card-order-buttons-col">
             <button className="order-step-button" aria-label="上に移動" disabled={i === 0} onClick={() => reorderRanking(moveItem(sorted.map((x) => x.id), i, -1))}><ChevronUp size={14} /></button>
             <button className="order-step-button" aria-label="下に移動" disabled={i === sorted.length - 1} onClick={() => reorderRanking(moveItem(sorted.map((x) => x.id), i, 1))}><ChevronDown size={14} /></button>
@@ -450,7 +466,6 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
         {!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}
       </div>
     </>}
-    {selected && <CompanyEditor company={selected} cards={cards} onClose={() => setSelected(null)} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); setSelected(null); toast.success("企業を削除しました"); }} />}
   </div>;
 }
 // One case per CompanyFieldKey, each returning the exact `<label>` the
@@ -549,7 +564,7 @@ function FieldOrderManager({ order, onChange, onClose }: { order: CompanyFieldKe
   </div>;
 }
 
-function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company: Company; cards: InterviewCard[]; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) {
+function CompanyEditor({ company, companies, cards, onClose, onSave, onDelete }: { company: Company; companies: Company[]; cards: InterviewCard[]; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) {
   const [draft, setDraft] = useState(company);
   // The modal grew a lot once ステータス, 振り返りメモ and 紐づくカード were
   // added on top of the original basic-info form — enough that it read as
@@ -588,6 +603,9 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
   // card's own editor (see InterviewScreen's company picker). Shown here
   // read-only, as a quick "what have I already prepared for them" reminder.
   const linkedCards = cards.filter((card) => card.companyId === company.id && !card.parentId);
+  const extraCards = (draft.extraCardIds ?? []).map((id) => cards.find((c) => c.id === id)).filter((c): c is InterviewCard => !!c && !c.parentId && c.companyId !== company.id);
+  const [flippedId, setFlippedId] = useState<string | null>(null);
+  const [pickingCards, setPickingCards] = useState(false);
   const tabsHint = useEdgeScrollHint<HTMLDivElement>([logs.length, linkedCards.length]);
   // Shares only the "public-facing research" fields of whatever is currently
   // in the draft (so an unsaved edit is reflected), never 自分のメモ or
@@ -615,8 +633,13 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
       window.prompt("このリンクをコピーしてください（自分のメモは含まれません）", url);
     }
   };
+  const isDirty = JSON.stringify({ ...draft, updatedAt: "" }) !== JSON.stringify({ ...company, updatedAt: "" });
+  const requestClose = () => { if (!isDirty || window.confirm("保存していない変更があります。破棄して戻りますか？")) onClose(); };
   return <>
-  <div className="modal-backdrop" onClick={onClose}><section className="editor-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><p className="eyebrow">企業メモ</p><h2>{draft.name}</h2></div><button className="icon-button" aria-label="項目の表示順を編集" title="項目の表示順を編集" onClick={() => setReorderingFields(true)}><ArrowUpDown size={17} /></button><button className="icon-button" aria-label="閲覧専用リンクを共有" title="閲覧専用リンクを共有" onClick={shareLink}><Link2 size={17} /></button><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={19} /></button></div>
+  <div className="screen company-page">
+    <div className="company-page-topbar"><button className="text-button mode-back-link" onClick={requestClose}><ArrowLeft size={15} />企業一覧に戻る</button><button className="primary-button company-page-save" onClick={() => onSave(draft)}><Check size={16} />保存する{isDirty && <span className="unsaved-dot" aria-label="未保存の変更あり" />}</button></div>
+    <section className="company-page-card">
+    <div className="company-page-header"><div className="company-avatar">{draft.name.slice(0, 1)}</div><div className="company-page-title"><p className="eyebrow">企業メモ</p><h2>{draft.name || "（企業名未入力）"}</h2></div><button className="icon-button" aria-label="項目の表示順を編集" title="項目の表示順を編集" onClick={() => setReorderingFields(true)}><ArrowUpDown size={17} /></button><button className="icon-button" aria-label="閲覧専用リンクを共有" title="閲覧専用リンクを共有" onClick={shareLink}><Link2 size={17} /></button></div>
     <div className="tab-scroll-wrap"><div className="segmented-tabs editor-tabs" ref={tabsHint.ref}>
       <button className={tab === "basic" ? "active" : ""} onClick={() => setTab("basic")}>基本情報</button>
       <button className={tab === "progress" ? "active" : ""} onClick={() => setTab("progress")}>進捗・メモ{logs.length > 0 && <small>{logs.length}</small>}</button>
@@ -649,16 +672,65 @@ function CompanyEditor({ company, cards, onClose, onSave, onDelete }: { company:
         </div>
       </div>
     </>}
-    {tab === "cards" && <div className="editor-section flush">
-      <h3>紐づいている面接カード</h3>
-      <div className="linked-cards-list">
-        {linkedCards.map((card) => <div className="linked-card-row" key={card.id}><span className="card-label">{card.category}</span><p>{card.question}</p></div>)}
+    {tab === "cards" && <div className="company-cards-tab">
+      <div className="editor-section flush">
+        <h3>この企業の面接カード <span className="count-badge">{linkedCards.length + extraCards.length}</span></h3>
+        <p className="company-cards-hint">カードをタップすると答えが見られます。</p>
+        <div className="company-card-sub-heading">この企業に紐づくカード</div>
+        <div className="flashcard-grid">
+          {linkedCards.map((card) => <MiniFlashcard key={card.id} card={card} flipped={flippedId === card.id} onFlip={() => setFlippedId(flippedId === card.id ? null : card.id)} />)}
+        </div>
         {!linkedCards.length && <p className="child-empty-hint">面接カードの編集画面から、この企業向けの質問を紐づけられます。</p>}
+        <div className="company-card-sub-heading">追加した共通カード（自己PRなど）</div>
+        <div className="flashcard-grid">
+          {extraCards.map((card) => <MiniFlashcard key={card.id} card={card} flipped={flippedId === card.id} onFlip={() => setFlippedId(flippedId === card.id ? null : card.id)} onRemove={() => update("extraCardIds", (draft.extraCardIds ?? []).filter((id) => id !== card.id))} />)}
+        </div>
+        {!extraCards.length && <p className="child-empty-hint">紐づけなくても、既存の面接カードからこの企業で見たいものを選んで追加できます。</p>}
+        <button type="button" className="secondary-button" onClick={() => setPickingCards(true)}><Plus size={15} />面接カードから追加</button>
+        {(draft.extraCardIds ?? []).join() !== (company.extraCardIds ?? []).join() && <p className="company-cards-hint unsaved">追加・解除は「保存する」で反映されます。</p>}
       </div>
     </div>}
-    <div className="modal-footer"><button className="danger-button" onClick={() => { if (window.confirm(`「${draft.name}」を削除しますか？この操作は取り消せません。`)) onDelete(); }}><Trash2 size={16} />削除</button><div><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" onClick={() => onSave(draft)}><Check size={16} />保存する</button></div></div></section></div>
+    <div className="company-page-footer"><button className="danger-button" onClick={() => { if (window.confirm(`「${draft.name}」を削除しますか？この操作は取り消せません。`)) onDelete(); }}><Trash2 size={16} />この企業を削除</button></div>
+    </section>
+  </div>
   {reorderingFields && <FieldOrderManager order={normalizedFieldOrder} onChange={setFieldOrder} onClose={() => setReorderingFields(false)} />}
+  {pickingCards && <CardPickerModal cards={cards} excludeIds={[...linkedCards.map((c) => c.id), ...(draft.extraCardIds ?? [])]} companies={companies} onClose={() => setPickingCards(false)} onAdd={(ids) => { update("extraCardIds", [...(draft.extraCardIds ?? []), ...ids]); setPickingCards(false); toast.success(`${ids.length}枚を追加しました（保存で反映）`); }} />}
   </>;
+}
+
+function MiniFlashcard({ card, flipped, onFlip, onRemove }: { card: InterviewCard; flipped: boolean; onFlip: () => void; onRemove?: () => void }) {
+  return <div className="flashcard-item">
+    <div className={`flashcard-wrap ${flipped ? "flipped" : ""}`}>
+      <button className={`flashcard card-color-${card.color ?? "purple"} ${flipped ? "flipped" : ""}`} onClick={onFlip}><div className="flash-front"><span className="card-label">{card.category}</span><h3>{card.question}</h3><span className="flip-hint">タップして答えを見る <ChevronRight size={15} /></span></div><div className="flash-back"><span className="card-label">{card.category}</span><p>{card.answer || "（答えは未入力です）"}</p><span className="flip-hint">もう一度タップで質問へ <RefreshCw size={15} /></span></div></button>
+    </div>
+    {onRemove && <button type="button" className="text-button company-card-remove" onClick={onRemove}><X size={13} />この企業から外す</button>}
+  </div>;
+}
+
+// 面接カードから複数選んでこの企業に参照として追加するピッカー（紐づけ先は変えない）。
+function CardPickerModal({ cards, excludeIds, companies, onClose, onAdd }: { cards: InterviewCard[]; excludeIds: string[]; companies: Company[]; onClose: () => void; onAdd: (ids: string[]) => void }) {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("すべて");
+  const [picked, setPicked] = useState<string[]>([]);
+  const pool = cards.filter((c) => !c.parentId && !excludeIds.includes(c.id));
+  const categories = ["すべて", ...Array.from(new Set(pool.map((c) => c.category)))];
+  const q = query.trim().toLowerCase();
+  const visible = pool.filter((c) => (category === "すべて" || c.category === category) && (!q || c.question.toLowerCase().includes(q) || c.answer.toLowerCase().includes(q)));
+  const toggle = (id: string) => setPicked((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const nameOf = (id?: string | null) => companies.find((c) => c.id === id)?.name;
+  return <div className="modal-backdrop" onClick={onClose}><section className="editor-modal card-picker-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-header"><div><p className="eyebrow">面接カード</p><h2>追加するカードを選ぶ</h2></div><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={19} /></button></div>
+    <div className="search-box"><Search size={19} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="質問・答えで検索" /></div>
+    <div className="chip-row">{categories.map((item) => <button key={item} className={`chip ${category === item ? "selected" : ""}`} onClick={() => setCategory(item)}>{item}</button>)}</div>
+    <div className="card-picker-list">
+      {visible.map((card) => <button key={card.id} type="button" className={`card-picker-row ${picked.includes(card.id) ? "picked" : ""}`} aria-pressed={picked.includes(card.id)} onClick={() => toggle(card.id)}>
+        <span className="card-picker-check">{picked.includes(card.id) && <Check size={13} />}</span>
+        <span className="card-picker-body"><span className="card-label">{card.category}</span>{nameOf(card.companyId) && <span className="card-company-tag">{nameOf(card.companyId)}</span>}<strong>{card.question}</strong></span>
+      </button>)}
+      {!visible.length && <p className="child-empty-hint">追加できるカードがありません。</p>}
+    </div>
+    <div className="modal-footer"><button className="secondary-button" onClick={onClose}>キャンセル</button><button className="primary-button" disabled={!picked.length} onClick={() => onAdd(picked)}><Plus size={16} />{picked.length}枚を追加</button></div>
+  </section></div>;
 }
 
 // Free-form tags for a company (see ResearchScreen's tag filter row) — unlike
@@ -1371,6 +1443,8 @@ function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { 
     pitchTemplates: load<PitchTemplate[]>("cc_pitch_templates", []),
     reverseQuestions: load<ReverseQuestion[]>("cc_reverse_questions", []),
     cardCategories: load<string[]>("cc_card_categories", Array.from(new Set(starterCards.map((card) => card.category)))),
+    gdTips: load<GdTip[]>("cc_gd_tips", []),
+    gdThemes: load<GdTheme[]>("cc_gd_themes", []),
     exportedAt: new Date().toISOString(),
     formatVersion: 1,
   });
@@ -1378,7 +1452,7 @@ function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { 
   const backup = () => { download(strToU8(JSON.stringify(getData(), null, 2)), `career-compass-backup-${today}.json`, "application/json"); setStatus("JSONバックアップを書き出しました"); };
   const backupZip = () => { const data = getData(); download(createBackupZip(data), `career-compass-backup-${today}.zip`, "application/zip"); setStatus("ZIPバックアップを書き出しました"); };
   const restore = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const isZip = file.name.toLowerCase().endsWith(".zip"); const reader = new FileReader(); reader.onload = () => { try { const bytes = isZip ? new Uint8Array(reader.result as ArrayBuffer) : strToU8(String(reader.result)); const data = parseBackupBytes(bytes, file.name) as CloudPayload; (Object.keys(BACKUP_FIELD_KEYS) as Array<keyof CloudPayload>).forEach((field) => { const value = data[field]; if (Array.isArray(value)) localStorage.setItem(BACKUP_FIELD_KEYS[field], JSON.stringify(value)); }); setStatus("バックアップを復元しました。画面を再読み込みします"); setTimeout(() => location.reload(), 700); } catch { setStatus("バックアップを読み込めませんでした。Career CompassのJSONまたはZIPを選択してください"); } }; if (isZip) reader.readAsArrayBuffer(file); else reader.readAsText(file); e.target.value = ""; };
-  return <div className="screen"><Header title="設定" eyebrow="アプリ設定" onMenu={() => onNavigate("home")} /><section className="page-lead"><div><p className="eyebrow">マイスペース</p><h2>安心して、積み上げる</h2><p>アプリの更新でデータが消えないように、この端末に自動保存しています。</p></div><Settings size={42} /></section><section className="settings-card"><div className="settings-icon purple">{theme === "dark" ? <Moon size={20} /> : <Sun size={20} />}</div><div><h3>表示</h3><p>ダークモードと文字サイズを、この端末向けに調整できます。</p><div className="display-settings-row"><span className="display-settings-label">配色</span><div className="chip-row"><button className={`chip ${theme === "light" ? "selected" : ""}`} onClick={() => theme === "dark" && toggleTheme?.()}><Sun size={13} />ライト</button><button className={`chip ${theme === "dark" ? "selected" : ""}`} onClick={() => theme === "light" && toggleTheme?.()}><Moon size={13} />ダーク</button></div></div><div className="display-settings-row"><span className="display-settings-label">文字サイズ</span><div className="chip-row">{(Object.keys(FONT_SCALE_LABEL) as FontScale[]).map((scale) => <button key={scale} className={`chip ${fontScale === scale ? "selected" : ""}`} onClick={() => setFontScale(scale)}>{FONT_SCALE_LABEL[scale]}</button>)}</div></div></div></section><section className="settings-card"><div className="settings-icon"><FileDown size={20} /></div><div><h3>就活データのバックアップ</h3><p>企業・面接カード・予定・自己PR・逆質問メモをJSONまたはZIPで保存できます。パソコンとスマホでデータを揃えたいときは、こちらのZIPを一方で書き出して、もう一方で復元してください。</p>{/* 復元 gets its own amber tone (see .restore-button) rather than the same
+  return <div className="screen"><Header title="設定" eyebrow="アプリ設定" onMenu={() => onNavigate("home")} /><section className="page-lead"><div><p className="eyebrow">マイスペース</p><h2>安心して、積み上げる</h2><p>アプリの更新でデータが消えないように、この端末に自動保存しています。</p></div><Settings size={42} /></section><section className="settings-card"><div className="settings-icon purple">{theme === "dark" ? <Moon size={20} /> : <Sun size={20} />}</div><div><h3>表示</h3><p>ダークモードと文字サイズを、この端末向けに調整できます。</p><div className="display-settings-row"><span className="display-settings-label">配色</span><div className="chip-row"><button className={`chip ${theme === "light" ? "selected" : ""}`} onClick={() => theme === "dark" && toggleTheme?.()}><Sun size={13} />ライト</button><button className={`chip ${theme === "dark" ? "selected" : ""}`} onClick={() => theme === "light" && toggleTheme?.()}><Moon size={13} />ダーク</button></div></div><div className="display-settings-row"><span className="display-settings-label">文字サイズ</span><div className="chip-row">{(Object.keys(FONT_SCALE_LABEL) as FontScale[]).map((scale) => <button key={scale} className={`chip ${fontScale === scale ? "selected" : ""}`} onClick={() => setFontScale(scale)}>{FONT_SCALE_LABEL[scale]}</button>)}</div></div></div></section><section className="settings-card"><div className="settings-icon"><FileDown size={20} /></div><div><h3>就活データのバックアップ</h3><p>企業・面接カード・予定・自己PR・逆質問メモ・グループディスカッションのメモをJSONまたはZIPで保存できます。パソコンとスマホでデータを揃えたいときは、こちらのZIPを一方で書き出して、もう一方で復元してください。</p>{/* 復元 gets its own amber tone (see .restore-button) rather than the same
     purple as the two save buttons — it overwrites whatever is already on
     this device, which is a meaningfully different, less-reversible action
     than exporting a copy. */}
@@ -1389,7 +1463,7 @@ function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { 
 // of the three sub-screens is showing lives only here, not in the app-wide
 // Screen type, so switching tabs and coming back always starts at this menu.
 function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: InterviewCard[]; setCards: Dispatch<SetStateAction<InterviewCard[]>>; companies: Company[]; onNavigate: (s: Screen) => void }) {
-  const [subScreen, setSubScreen] = useState<"menu" | "cards" | "quiz-setup" | "quiz-play" | "templates" | "reverse-questions">("menu");
+  const [subScreen, setSubScreen] = useState<"menu" | "cards" | "quiz-setup" | "quiz-play" | "templates" | "reverse-questions" | "group-discussion">("menu");
   // Same reasoning as the top-level screen switch (see Home()) — this hub
   // has its own nested navigation between 面接カード/問題 sub-screens.
   useEffect(() => { window.scrollTo(0, 0); }, [subScreen]);
@@ -1440,6 +1514,7 @@ function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: Inter
   if (subScreen === "quiz-play") return <QuizPlayScreen deck={quizDeck} index={quizIndex} flipped={quizFlipped} onFlip={() => setQuizFlipped((f) => !f)} onPrev={quizPrev} onNext={quizNext} onNavigate={onNavigate} onBack={backToMenu} />;
   if (subScreen === "templates") return <TemplateScreen onNavigate={onNavigate} onBack={backToMenu} />;
   if (subScreen === "reverse-questions") return <ReverseQuestionScreen companies={companies} onNavigate={onNavigate} onBack={backToMenu} />;
+  if (subScreen === "group-discussion") return <GroupDiscussionScreen companies={companies} onNavigate={onNavigate} onBack={backToMenu} />;
 
   const weekAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weeklyCount = practiceLog.filter((iso) => new Date(iso).getTime() >= weekAgoMs).length;
@@ -1490,6 +1565,11 @@ function InterviewHub({ cards, setCards, companies, onNavigate }: { cards: Inter
       <button className="mode-choice-card" onClick={() => setSubScreen("reverse-questions")}>
         <div className="mode-choice-icon pink"><MessageCircleQuestion size={22} /></div>
         <div><h3>逆質問メモ</h3><p>企業ごと・共通の逆質問と、返ってきた回答を残す</p></div>
+        <ChevronRight size={18} />
+      </button>
+      <button className="mode-choice-card" onClick={() => setSubScreen("group-discussion")}>
+        <div className="mode-choice-icon blue"><Users size={22} /></div>
+        <div><h3>グループディスカッション</h3><p>気を付けることと、企業ごと・共通のテーマ＆自分の考えを残す</p></div>
         <ChevronRight size={18} />
       </button>
     </div>
@@ -1627,6 +1707,129 @@ function ReverseQuestionScreen({ companies, onNavigate, onBack }: { companies: C
       </div>)}
       {!visibleEntries.length && !show && <div className="empty-state large"><MessageCircleQuestion size={24} />{filter === "all" ? "まだ逆質問がありません。聞きたい質問や、聞いた回答を書いて残しておきましょう。" : "このフィルターに一致する逆質問はまだありません。"}</div>}
     </div>
+  </div>;
+}
+
+// グループディスカッション (GD) 対策。上のタブで切り替える2つの欄:
+//   ・気を付けること — 企業を問わず共通の心得（1項目ずつ追加・編集）
+//   ・テーマ        — テーマ／概要／自分の考え。企業を選べば「その企業で過去に
+//                    出たテーマ」、選ばなければ企業を問わない練習用テーマ。
+function GroupDiscussionScreen({ companies, onNavigate, onBack }: { companies: Company[]; onNavigate: (s: Screen) => void; onBack: () => void }) {
+  const [tab, setTab] = useState<"tips" | "themes">("tips");
+  const [tips, setTips] = usePersisted<GdTip[]>("cc_gd_tips", []);
+  const [themes, setThemes] = usePersisted<GdTheme[]>("cc_gd_themes", []);
+
+  // --- 気を付けること ---
+  const [tipEditingId, setTipEditingId] = useState<string | null>(null);
+  const [tipDraft, setTipDraft] = useState("");
+  const [showTipForm, setShowTipForm] = useState(false);
+  const startNewTip = () => { setTipEditingId(null); setTipDraft(""); setShowTipForm(true); };
+  const startEditTip = (tip: GdTip) => { setTipEditingId(tip.id); setTipDraft(tip.text); setShowTipForm(true); };
+  const cancelTip = () => { setShowTipForm(false); setTipEditingId(null); setTipDraft(""); };
+  const saveTip = () => {
+    if (!tipDraft.trim()) return toast.error("気を付けることを入力してください");
+    const now = new Date().toISOString();
+    if (tipEditingId) {
+      setTips((current) => current.map((t) => (t.id === tipEditingId ? { ...t, text: tipDraft, updatedAt: now } : t)));
+      toast.success("更新しました");
+    } else {
+      setTips((current) => [{ id: `gdtip-${Date.now()}`, text: tipDraft, updatedAt: now }, ...current]);
+      toast.success("追加しました");
+    }
+    cancelTip();
+  };
+  const removeTip = (id: string) => { if (!window.confirm("この項目を削除しますか？この操作は取り消せません。")) return; setTips((current) => current.filter((t) => t.id !== id)); toast.success("削除しました"); };
+
+  // --- テーマ ---
+  type ThemeDraft = { companyId: string | null; theme: string; summary: string; myThoughts: string };
+  const emptyThemeDraft: ThemeDraft = { companyId: null, theme: "", summary: "", myThoughts: "" };
+  const [themeEditingId, setThemeEditingId] = useState<string | null>(null);
+  const [themeDraft, setThemeDraft] = useState<ThemeDraft>(emptyThemeDraft);
+  const [showThemeForm, setShowThemeForm] = useState(false);
+  // "all" | "common" | a company id — also the default company for a new
+  // theme started while a specific company is already selected.
+  const [filter, setFilter] = useState<string>("all");
+  const companyName = (id: string | null) => companies.find((c) => c.id === id)?.name;
+  const startNewTheme = () => { setThemeEditingId(null); setThemeDraft({ ...emptyThemeDraft, companyId: filter !== "all" && filter !== "common" ? filter : null }); setShowThemeForm(true); };
+  const startEditTheme = (t: GdTheme) => { setThemeEditingId(t.id); setThemeDraft({ companyId: t.companyId, theme: t.theme, summary: t.summary, myThoughts: t.myThoughts }); setShowThemeForm(true); };
+  const cancelTheme = () => { setShowThemeForm(false); setThemeEditingId(null); setThemeDraft(emptyThemeDraft); };
+  const saveTheme = () => {
+    if (!themeDraft.theme.trim()) return toast.error("テーマを入力してください");
+    const now = new Date().toISOString();
+    if (themeEditingId) {
+      setThemes((current) => current.map((t) => (t.id === themeEditingId ? { ...t, ...themeDraft, updatedAt: now } : t)));
+      toast.success("テーマを更新しました");
+    } else {
+      setThemes((current) => [{ id: `gdtheme-${Date.now()}`, ...themeDraft, updatedAt: now }, ...current]);
+      toast.success("テーマを追加しました");
+    }
+    cancelTheme();
+  };
+  const removeTheme = (id: string) => { if (!window.confirm("このテーマを削除しますか？この操作は取り消せません。")) return; setThemes((current) => current.filter((t) => t.id !== id)); toast.success("テーマを削除しました"); };
+  const visibleThemes = themes.filter((t) => (filter === "all" ? true : filter === "common" ? t.companyId === null : t.companyId === filter));
+  // Only companies that already have a theme get a filter chip, so the row
+  // doesn't list every researched company whether or not it has GD notes.
+  const companiesWithThemes = companies.filter((c) => themes.some((t) => t.companyId === c.id));
+
+  return <div className="screen">
+    <Header title="グループディスカッション" eyebrow="面接対策" onMenu={() => onNavigate("settings")} />
+    <button className="text-button mode-back-link" onClick={onBack}><ArrowLeft size={15} />選択に戻る</button>
+    <section className="page-lead"><div><p className="eyebrow">GD対策</p><h2>心得とテーマを、ここにためる</h2><p>気を付けることのメモと、企業ごと・共通のテーマ（概要と自分の考え）を残せます。</p></div></section>
+    <div className="segmented-tabs research-tabs">
+      <button className={tab === "tips" ? "active" : ""} onClick={() => setTab("tips")}><Lightbulb size={16} />気を付けること{tips.length > 0 && <small>{tips.length}</small>}</button>
+      <button className={tab === "themes" ? "active" : ""} onClick={() => setTab("themes")}><MessageSquare size={16} />テーマ{themes.length > 0 && <small>{themes.length}</small>}</button>
+    </div>
+
+    {tab === "tips" && <>
+      {!showTipForm && <button className="primary-button full-width" onClick={startNewTip}><Plus size={17} />気を付けることを追加</button>}
+      {showTipForm && <div className="inline-form">
+        <div className="form-grid">
+          <label className="wide">気を付けること<AutoGrowTextarea value={tipDraft} onChange={(e) => setTipDraft(e.target.value)} placeholder="例：役割に固執せず、議論が止まったら論点を整理し直す" /></label>
+        </div>
+        <div className="child-add-actions"><button className="secondary-button" onClick={cancelTip}>キャンセル</button><button className="primary-button" onClick={saveTip}><Check size={16} />{tipEditingId ? "更新する" : "保存する"}</button></div>
+      </div>}
+      <div className="template-list">
+        {tips.map((tip) => <div className="template-card" key={tip.id}>
+          <p className="gd-field-body">{tip.text}</p>
+          <div className="template-card-actions">
+            <button className="secondary-button" onClick={() => startEditTip(tip)}><Pencil size={14} />編集</button>
+            <button className="icon-button" aria-label="この項目を削除" onClick={() => removeTip(tip.id)}><Trash2 size={15} /></button>
+          </div>
+        </div>)}
+        {!tips.length && !showTipForm && <div className="empty-state large"><Lightbulb size={24} />まだ項目がありません。GDで意識したいこと、反省点などを書いて残しておきましょう。</div>}
+      </div>
+    </>}
+
+    {tab === "themes" && <>
+      {!showThemeForm && <button className="primary-button full-width" onClick={startNewTheme}><Plus size={17} />テーマを追加</button>}
+      {showThemeForm && <div className="inline-form">
+        <div className="form-grid">
+          <label className="wide">対象<select value={themeDraft.companyId ?? ""} onChange={(e) => setThemeDraft((d) => ({ ...d, companyId: e.target.value || null }))}><option value="">企業を問わない（共通テーマ）</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}（その企業で過去に出たテーマ）</option>)}</select></label>
+          <label className="wide">テーマ<AutoGrowTextarea value={themeDraft.theme} onChange={(e) => setThemeDraft((d) => ({ ...d, theme: e.target.value }))} placeholder="例：新入社員の離職を防ぐ施策を考えよ" /></label>
+          <label className="wide">概要<AutoGrowTextarea value={themeDraft.summary} onChange={(e) => setThemeDraft((d) => ({ ...d, summary: e.target.value }))} placeholder="条件・制限時間・議論の進み方・結論の形式など" /></label>
+          <label className="wide">自分の考え<AutoGrowTextarea value={themeDraft.myThoughts} onChange={(e) => setThemeDraft((d) => ({ ...d, myThoughts: e.target.value }))} placeholder="自分ならどう論点を立てるか、主張したい意見、反省点など" /></label>
+        </div>
+        <div className="child-add-actions"><button className="secondary-button" onClick={cancelTheme}>キャンセル</button><button className="primary-button" onClick={saveTheme}><Check size={16} />{themeEditingId ? "更新する" : "保存する"}</button></div>
+      </div>}
+      <div className="category-filter">
+        <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>すべて<small>{themes.length}</small></button>
+        <button className={filter === "common" ? "active" : ""} onClick={() => setFilter("common")}>企業問わず<small>{themes.filter((t) => t.companyId === null).length}</small></button>
+        {companiesWithThemes.map((c) => <button key={c.id} className={filter === c.id ? "active" : ""} onClick={() => setFilter(c.id)}>{c.name}<small>{themes.filter((t) => t.companyId === c.id).length}</small></button>)}
+      </div>
+      <div className="template-list">
+        {visibleThemes.map((t) => <div className="template-card" key={t.id}>
+          <div className="template-card-header"><h3>{t.theme}</h3><span className="template-updated">{new Date(t.updatedAt).toLocaleDateString("ja-JP")}更新</span></div>
+          <span className="industry-tag">{t.companyId ? (companyName(t.companyId) ?? "削除済みの企業") : "企業問わず"}</span>
+          <div className="gd-field"><span className="gd-field-label">概要</span>{t.summary ? <p className="gd-field-body">{t.summary}</p> : <p className="gd-field-body empty">未記入</p>}</div>
+          <div className="gd-field"><span className="gd-field-label">自分の考え</span>{t.myThoughts ? <p className="gd-field-body">{t.myThoughts}</p> : <p className="gd-field-body empty">未記入</p>}</div>
+          <div className="template-card-actions">
+            <button className="secondary-button" onClick={() => startEditTheme(t)}><Pencil size={14} />編集</button>
+            <button className="icon-button" aria-label="このテーマを削除" onClick={() => removeTheme(t.id)}><Trash2 size={15} /></button>
+          </div>
+        </div>)}
+        {!visibleThemes.length && !showThemeForm && <div className="empty-state large"><MessageSquare size={24} />{filter === "all" ? "まだテーマがありません。企業で過去に出たテーマや、練習したテーマを書いて残しておきましょう。" : "このフィルターに一致するテーマはまだありません。"}</div>}
+      </div>
+    </>}
   </div>;
 }
 

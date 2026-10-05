@@ -149,6 +149,7 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .mode-choice-icon { width: 46px; height: 46px; display: grid; place-items: center; flex: 0 0 auto; color: #6654d9; background: #efedff; border-radius: 14px; }
 .mode-choice-icon.orange { color: #d98654; background: #fff2e8; }
 .mode-choice-icon.pink { color: #c14f80; background: #ffeaf3; }
+.mode-choice-icon.blue { color: #3f7fd1; background: #e8f1ff; }
 .mode-choice-card > div:nth-child(2) { flex: 1; min-width: 0; }
 .mode-choice-card h3 { margin: 0 0 4px; font-size: 15px; }
 .mode-choice-card p { margin: 0; color: #9090a1; font-size: 11px; line-height: 1.6; }
@@ -530,6 +531,12 @@ body { background: var(--background); color: var(--foreground); }
 .template-updated { flex: 0 0 auto; color: #9999aa; font-size: 9px; }
 .template-body-preview { margin: 8px 0 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; color: #77778c; font-size: 12px; line-height: 1.7; white-space: pre-line; }
 .template-card-actions { display: flex; gap: 8px; margin-top: 12px; }
+/* グループディスカッションのテーマ欄: 概要と自分の考えは長文になりがちなので、
+   .template-body-preview のような3行カットはせず全文を見せる。 */
+.gd-field { margin-top: 10px; }
+.gd-field-label { display: block; margin-bottom: 3px; color: #9999aa; font-size: 10px; font-weight: 700; }
+.gd-field-body { margin: 0; color: #55556b; font-size: 12px; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
+.gd-field-body.empty { color: #c2c2cf; }
 .mode-choice-icon.green { color: #4caa8e; background: #e8f7f1; }
 
 /* HomeScreen's "注目" card — schedule items due soon plus companies that
@@ -711,3 +718,42 @@ body { background: var(--background); color: var(--foreground); }
 .dark .template-card { background: #262440; border-color: #3a3660; }
 .dark .template-updated { color: #8d84b8; }
 .dark .template-body-preview { color: #cabbff; }
+.dark .gd-field-label { color: #8d84b8; }
+.dark .gd-field-body { color: #cabbff; }
+.dark .gd-field-body.empty { color: #6f6a96; }
+
+/* ===== 企業詳細：全画面ページ ===== */
+.company-page { display: flex; flex-direction: column; gap: 12px; }
+.company-page-topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 0; z-index: 20; padding: 8px 0; background: var(--background, #f7f7fb); }
+.company-page-topbar .mode-back-link { margin: 0; }
+.company-page-save { position: relative; }
+.unsaved-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: #f0883e; border: 2px solid #fff; }
+.company-page-card { display: flex; flex-direction: column; gap: 14px; padding: 16px; background: #fff; border: 1px solid #ececf3; border-radius: 18px; box-shadow: 0 8px 24px #3a2f8010; }
+.company-page-header { display: flex; align-items: center; gap: 10px; }
+.company-page-title { flex: 1; min-width: 0; }
+.company-page-title h2 { margin: 0; overflow-wrap: anywhere; }
+.company-page-footer { display: flex; justify-content: flex-end; padding-top: 10px; border-top: 1px solid #ececf3; }
+@media (min-width: 900px) { .company-page-card { padding: 24px 28px; } }
+.company-cards-tab .flashcard-grid { margin: 6px 0 12px; }
+.company-cards-hint { margin: 0 0 6px; font-size: 12px; color: #77778a; }
+.company-cards-hint.unsaved { color: #c26a1a; margin-top: 8px; }
+.company-card-sub-heading { margin: 12px 0 4px; font-size: 13px; font-weight: 700; color: #4b4b63; }
+.company-card-remove { align-self: flex-end; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #c0392b; }
+.card-picker-modal { display: flex; flex-direction: column; gap: 10px; max-height: 88vh; }
+.card-picker-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 120px; flex: 1; }
+.card-picker-row { display: flex; align-items: flex-start; gap: 10px; text-align: left; padding: 10px 12px; border: 1px solid #e3e3ee; border-radius: 12px; background: #fff; }
+.card-picker-row.picked { border-color: #6554d9; background: #f4f2ff; }
+.card-picker-check { flex: none; width: 20px; height: 20px; margin-top: 2px; display: grid; place-items: center; border: 2px solid #c8c8d8; border-radius: 6px; color: #fff; }
+.card-picker-row.picked .card-picker-check { background: #6554d9; border-color: #6554d9; }
+.card-picker-body { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.card-picker-body strong { flex-basis: 100%; font-size: 14px; overflow-wrap: anywhere; }
+.card-picker-body .card-label { color: #6654d9; background: #f4f2ff; }
+.card-picker-body .card-company-tag { color: #6654d9; background: #f4f2ff; }
+.dark .company-page-topbar { background: var(--background, #14141c); }
+.dark .company-page-card, .dark .card-picker-row { background: #1d1d2a; border-color: #34344a; }
+.dark .company-page-footer { border-top-color: #34344a; }
+.dark .company-card-sub-heading { color: #cfcfe0; }
+.dark .company-cards-hint { color: #9a9ab0; }
+.dark .card-picker-row.picked { background: #2a2650; border-color: #8976ee; }
+.dark .card-picker-check { border-color: #55556e; }
+.dark .unsaved-dot { border-color: #1d1d2a; }

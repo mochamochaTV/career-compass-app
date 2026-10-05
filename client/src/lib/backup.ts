@@ -7,17 +7,19 @@ export type CareerCompassBackup = {
   pitchTemplates?: unknown[];
   reverseQuestions?: unknown[];
   cardCategories?: unknown[];
+  gdTips?: unknown[];
+  gdThemes?: unknown[];
   exportedAt?: string;
   formatVersion?: number;
 };
 
-const KNOWN_ARRAY_FIELDS: (keyof CareerCompassBackup)[] = ["companies", "cards", "schedule", "pitchTemplates", "reverseQuestions", "cardCategories"];
+const KNOWN_ARRAY_FIELDS: (keyof CareerCompassBackup)[] = ["companies", "cards", "schedule", "pitchTemplates", "reverseQuestions", "cardCategories", "gdTips", "gdThemes"];
 
 export function createBackupZip(data: CareerCompassBackup): Uint8Array {
   return zipSync({
     "career-compass-data.json": strToU8(JSON.stringify(data, null, 2)),
     "README.txt": strToU8(
-      "Career Compass 就活データバックアップ\n\ncareer-compass-data.jsonに企業情報・面接カード・スケジュール・自己PR・逆質問メモが入っています。\nアプリの設定画面から復元できます。\n",
+      "Career Compass 就活データバックアップ\n\ncareer-compass-data.jsonに企業情報・面接カード・スケジュール・自己PR・逆質問メモ・グループディスカッションのメモが入っています。\nアプリの設定画面から復元できます。\n",
     ),
   });
 }

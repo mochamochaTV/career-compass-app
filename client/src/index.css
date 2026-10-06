@@ -800,3 +800,27 @@ body { background: var(--background); color: var(--foreground); }
 .schedule-detail-date { font-size: 13px; font-weight: 700; color: #77778a; }
 .dark .schedule-detail-date { color: #9a9ab0; }
 .schedule-detail-page .company-page-card.cat-color-purple, .schedule-detail-page .company-page-card[class*="cat-color-"] { border-top: 4px solid var(--cat); }
+.timeline-location { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; color: #77778a; overflow-wrap: anywhere; }
+.dark .timeline-location { color: #9a9ab0; }
+.company-schedule-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.company-schedule-row { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid #ececf3; border-radius: 12px; background: #fbfbfe; }
+.company-schedule-row.done { opacity: .8; }
+.company-schedule-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.company-schedule-top .category-pill { margin-top: 0; }
+.company-schedule-row small { color: #77778a; }
+.company-schedule-note { margin-top: 4px; }
+.company-schedule-note span { font-size: 11px; font-weight: 700; color: #6654d9; }
+.company-schedule-note p { margin: 2px 0 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dark .company-schedule-row { background: #232333; border-color: #34344a; }
+.dark .company-schedule-row small { color: #9a9ab0; }
+.dark .company-schedule-note span { color: #b6aedd; }
+.schedule-todo-section { display: flex; flex-direction: column; gap: 8px; }
+.schedule-todo-section h3 { margin: 0; font-size: 14px; }
+.schedule-todo-list { display: flex; flex-direction: column; gap: 8px; }
+.schedule-todo-row { display: flex; align-items: center; gap: 8px; }
+.schedule-todo-row input { flex: 1; min-width: 0; }
+.schedule-todo-row.done input { text-decoration: line-through; color: #9a9ab0; }
+.schedule-todo-add { display: flex; gap: 8px; }
+.schedule-todo-add input { flex: 1; min-width: 0; }
+.category-pill.todo-pill { color: #b3691b; background: #fff2e0; }
+.dark .category-pill.todo-pill { color: #ffb27e; background: #4a3519; }

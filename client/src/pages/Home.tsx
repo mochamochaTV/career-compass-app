@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetSta
 import { strToU8 } from "fflate";
 import {
   AlertCircle, ArrowLeft, ArrowUpDown, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, Home as HomeIcon, Lightbulb, Link2, Menu, MessageCircleQuestion, MessageSquare, Mic, Moon, Pause, Pencil, PictureInPicture2, Play, Plus,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Download, FileDown, FileUp, FileText, Home as HomeIcon, Lightbulb, Link2, MapPin, Menu, MessageCircleQuestion, MessageSquare, Mic, Moon, Pause, Pencil, PictureInPicture2, Play, Plus,
   RefreshCw, RotateCcw, Search, Settings, Sparkles, Square, Star, Sun, Tag, Target, Trash2, Trophy, Users, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -131,8 +131,19 @@ function weightedSample<T>(items: T[], weightOf: (item: T) => number, count: num
 const QUIZ_COUNT_OPTIONS: Array<number | "all"> = [5, 10, 15, 20, "all"];
 const QUIZ_RATING_OPTIONS: Array<{ key: QuizRatingFilter; label: string }> = [...RATING_ORDER.map((r) => ({ key: r as QuizRatingFilter, label: RATING_LABEL[r] })), { key: "none", label: "未評価" }];
 const DEFAULT_QUIZ_SETTINGS: QuizSettings = { count: 10, ratings: QUIZ_RATING_OPTIONS.map((option) => option.key), weighted: false };
-export type ScheduleItem = { id: string; title: string; date: string; time: string; category: string; done: boolean; companyId?: string | null; summary?: string; impressions?: string; learned?: string; memo?: string };
+export type ScheduleItem = { id: string; title: string; date: string; time: string; endTime?: string; location?: string; category: string; done: boolean; companyId?: string | null; summary?: string; impressions?: string; learned?: string; memo?: string; tasks?: ScheduleTodo[] };
+export type ScheduleTodo = { id: string; text: string; done: boolean };
 export type ScheduleCategoryColor = { name: string; color: CardColor };
+// 開始・終了時間はどちらも任意（両方なし／片方だけも可）。
+export function formatTimeRange(item: Pick<ScheduleItem, "time" | "endTime">): string {
+  if (item.time && item.endTime) return `${item.time}〜${item.endTime}`;
+  if (item.time) return `${item.time}〜`;
+  if (item.endTime) return `〜${item.endTime}`;
+  return "時間未定";
+}
+// 時間なしの予定はその日の最後に並べる。
+const scheduleSortKey = (i: Pick<ScheduleItem, "date" | "time">) => `${i.date}${i.time || "99:99"}`;
+const byScheduleTime = (a: ScheduleItem, b: ScheduleItem) => scheduleSortKey(a).localeCompare(scheduleSortKey(b));
 
 // A named, reusable chunk of self-PR / ガクチカ text — written once, then
 // pasted into whichever company's ES or interview prep needs it, instead of
@@ -298,14 +309,24 @@ function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[];
   const soonCutoff = now + 3 * 24 * 60 * 60 * 1000;
   const upcoming = schedule
     .filter((x) => !x.done && new Date(`${x.date}T${x.time || "23:59"}`).getTime() <= soonCutoff)
-    .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))
+    .sort(byScheduleTime)
     .slice(0, 2);
   const inactiveStages = new Set<CompanyStage>(["未応募", "内定", "不合格", "辞退"]);
   const staleCutoffMs = 14 * 24 * 60 * 60 * 1000;
   const stalledCompanies = companies
     .filter((c) => !inactiveStages.has(stageOf(c)) && now - new Date(c.updatedAt).getTime() > staleCutoffMs)
     .slice(0, 2);
-  const hasAttention = upcoming.length > 0 || stalledCompanies.length > 0;
+  // 最後にバックアップした日（まだなら初めて開いた日）から7日以上たったら促す。
+  const backupAgeDays = (() => {
+    try {
+      const base = localStorage.getItem("cc_last_backup") ?? (localStorage.getItem("cc_first_seen") ?? (localStorage.setItem("cc_first_seen", new Date().toISOString()), null));
+      if (!base) return 0;
+      return Math.floor((now - new Date(base).getTime()) / (24 * 60 * 60 * 1000));
+    } catch { return 0; }
+  })();
+  const hasBackup = (() => { try { return !!localStorage.getItem("cc_last_backup"); } catch { return false; } })();
+  const backupDue = backupAgeDays >= 7;
+  const hasAttention = upcoming.length > 0 || stalledCompanies.length > 0 || backupDue;
 
   return <div className="screen home-screen"><Header title="おかえりなさい" eyebrow="ホーム" onMenu={() => onNavigate("settings")} /><InstallBanner /><section className="hero-card"><div><p className="eyebrow light">今日のポイント</p><h2>次の一歩を、<br /><em>今日のうちに。</em></h2><p className="hero-copy">企業研究と面接準備を、ここでひとつに。</p></div><div className="hero-orbit"><Target size={34} /><span>準備度<br /><strong>{Math.min(100, companies.length * 12 + 34)}%</strong></span></div></section>
     {hasAttention && <section className="attention-card">
@@ -313,13 +334,14 @@ function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[];
       {/* An icon per row (not just a colored dot) so the reason something is
           flagged doesn't rely on color alone — a clock for "coming up soon",
           a pause for "stopped moving". */}
-      {upcoming.map((task) => <button className="attention-row" key={task.id} onClick={() => onNavigate("schedule")}><Clock size={14} className="attention-icon due" /><span className="attention-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={15} /></button>)}
+      {upcoming.map((task) => <button className="attention-row" key={task.id} onClick={() => onNavigate("schedule")}><Clock size={14} className="attention-icon due" /><span className="attention-content"><strong>{task.title}</strong><small>{task.date} · {formatTimeRange(task)} · {task.category}{task.location ? ` · ${task.location}` : ""}</small></span><ChevronRight size={15} /></button>)}
+      {backupDue && <button className="attention-row" onClick={() => onNavigate("settings")}><Download size={14} className="attention-icon stalled" /><span className="attention-content"><strong>バックアップをおすすめします</strong><small>{hasBackup ? `前回のバックアップから${backupAgeDays}日たっています` : "まだバックアップを保存していません"}（ブラウザのデータが消えても復元できます）</small></span><ChevronRight size={15} /></button>}
       {stalledCompanies.map((c) => <button className="attention-row" key={c.id} onClick={() => onNavigate("research")}><Pause size={14} className="attention-icon stalled" /><span className="attention-content"><strong>{c.name}</strong><small>「{stageOf(c)}」のまま2週間以上動きがありません</small></span><ChevronRight size={15} /></button>)}
     </section>}
-    <div className="section-heading"><div><p className="eyebrow">サマリー</p><h2>就活の現在地</h2></div><button className="text-button" onClick={() => onNavigate("schedule")}>予定を見る <ChevronRight size={16} /></button></div><section className="overview-grid"><div className="stat-card purple"><BriefcaseBusiness size={19} /><strong>{companies.length}</strong><span>研究中の企業</span></div><div className="stat-card orange"><BookOpen size={19} /><strong>{cards.length}</strong><span>面接カード</span></div><div className="stat-card green"><CalendarDays size={19} /><strong>{pending.length}</strong><span>未完了の予定</span></div></section><div className="section-heading"><div><p className="eyebrow">直近のタスク</p><h2>次にやること</h2></div><button className="icon-button" onClick={() => onNavigate("schedule")}><ChevronRight size={18} /></button></div><section className="task-preview">{pending.length ? pending.map((task) => <button className="task-row" key={task.id} onClick={() => onNavigate("schedule")}><span className="task-dot" /><span className="task-content"><strong>{task.title}</strong><small>{task.date} · {task.time} · {task.category}</small></span><ChevronRight size={17} /></button>) : <div className="empty-state"><Check size={20} />すべて完了。いいペースです。</div>}</section><section className="tip-card"><Lightbulb size={20} /><div><strong>続けるコツ</strong><p>企業を調べたら、志望理由を一文だけ書いておくと面接カードに変わります。</p></div></section></div>;
+    <div className="section-heading"><div><p className="eyebrow">サマリー</p><h2>就活の現在地</h2></div><button className="text-button" onClick={() => onNavigate("schedule")}>予定を見る <ChevronRight size={16} /></button></div><section className="overview-grid"><div className="stat-card purple"><BriefcaseBusiness size={19} /><strong>{companies.length}</strong><span>研究中の企業</span></div><div className="stat-card orange"><BookOpen size={19} /><strong>{cards.length}</strong><span>面接カード</span></div><div className="stat-card green"><CalendarDays size={19} /><strong>{pending.length}</strong><span>未完了の予定</span></div></section><div className="section-heading"><div><p className="eyebrow">直近のタスク</p><h2>次にやること</h2></div><button className="icon-button" onClick={() => onNavigate("schedule")}><ChevronRight size={18} /></button></div><section className="task-preview">{pending.length ? pending.map((task) => <button className="task-row" key={task.id} onClick={() => onNavigate("schedule")}><span className="task-dot" /><span className="task-content"><strong>{task.title}</strong><small>{task.date} · {formatTimeRange(task)} · {task.category}{task.location ? ` · ${task.location}` : ""}</small></span><ChevronRight size={17} /></button>) : <div className="empty-state"><Check size={20} />すべて完了。いいペースです。</div>}</section><section className="tip-card"><Lightbulb size={20} /><div><strong>続けるコツ</strong><p>企業を調べたら、志望理由を一文だけ書いておくと面接カードに変わります。</p></div></section></div>;
 }
 
-function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { companies: Company[]; setCompanies: Dispatch<SetStateAction<Company[]>>; cards: InterviewCard[]; onNavigate: (s: Screen) => void }) {
+function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }: { companies: Company[]; setCompanies: Dispatch<SetStateAction<Company[]>>; cards: InterviewCard[]; schedule: ScheduleItem[]; onNavigate: (s: Screen) => void }) {
   const [mode, setMode] = useState<ResearchMode>("research");
   // Same reasoning as the top-level screen switch (see Home()) — 調べる/
   // まとめ/進捗 swap in the same scroll container.
@@ -383,7 +405,7 @@ function ResearchScreen({ companies, setCompanies, cards, onNavigate }: { compan
   // auto-sort would immediately erase it.
   const reorderRanking = (visibleIds: string[]) => { setManualOrder(visibleIds); reorderCompanies(visibleIds); };
 
-  if (selected) return <CompanyEditor key={selected.id} company={selected} companies={companies} cards={cards} onClose={closeCompany} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); closeCompany(); toast.success("企業を削除しました"); }} />;
+  if (selected) return <CompanyEditor key={selected.id} company={selected} companies={companies} cards={cards} schedule={schedule} onClose={closeCompany} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); closeCompany(); toast.success("企業を削除しました"); }} />;
 
   return <div className="screen">
     <Header title="企業研究" eyebrow="リサーチ" onMenu={() => onNavigate("settings")} />
@@ -566,7 +588,7 @@ function FieldOrderManager({ order, onChange, onClose }: { order: CompanyFieldKe
   </div>;
 }
 
-function CompanyEditor({ company, companies, cards, onClose, onSave, onDelete }: { company: Company; companies: Company[]; cards: InterviewCard[]; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) {
+function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, onDelete }: { company: Company; companies: Company[]; cards: InterviewCard[]; schedule: ScheduleItem[]; onClose: () => void; onSave: (c: Company) => void; onDelete: () => void }) {
   const [draft, setDraft] = useState(company);
   // The modal grew a lot once ステータス, 振り返りメモ and 紐づくカード were
   // added on top of the original basic-info form — enough that it read as
@@ -606,6 +628,7 @@ function CompanyEditor({ company, companies, cards, onClose, onSave, onDelete }:
   // read-only, as a quick "what have I already prepared for them" reminder.
   const linkedCards = cards.filter((card) => card.companyId === company.id && !card.parentId);
   const extraCards = (draft.extraCardIds ?? []).map((id) => cards.find((c) => c.id === id)).filter((c): c is InterviewCard => !!c && !c.parentId && c.companyId !== company.id);
+  const companySchedule = schedule.filter((i) => i.companyId === company.id).sort((a, b) => scheduleSortKey(b).localeCompare(scheduleSortKey(a)));
   const [flippedId, setFlippedId] = useState<string | null>(null);
   const [pickingCards, setPickingCards] = useState(false);
   const tabsHint = useEdgeScrollHint<HTMLDivElement>([logs.length, linkedCards.length]);
@@ -665,6 +688,19 @@ function CompanyEditor({ company, companies, cards, onClose, onSave, onDelete }:
           generic purple every other selected chip gets, so the color's
           meaning is learned right where the stage is actually picked. */}
       <div className="form-grid"><label className="wide">選考ステータス<div className="chip-row-wrap"><div className="chip-row" ref={stageHint.ref}>{COMPANY_STAGES.map((s) => <button type="button" key={s} className={`chip chip-tone-${STAGE_TONE[s]} ${stageOf(draft) === s ? "selected" : ""}`} onClick={() => update("stage", s)}>{s}</button>)}</div>{stageHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div></label></div>
+      <div className="editor-section flush">
+        <h3>この企業の予定と記録 <span className="count-badge">{companySchedule.length}</span></h3>
+        <p className="company-cards-hint">予定ページで書いた概要・感想・学んだことが、ここに並びます（編集は予定ページから）。</p>
+        <div className="company-schedule-list">
+          {companySchedule.map((it) => <div className={`company-schedule-row ${it.done ? "done" : ""}`} key={it.id}>
+            <div className="company-schedule-top"><strong>{it.title}</strong>{it.done && <span className="category-pill note-pill">完了</span>}</div>
+            <small>{it.date} · {formatTimeRange(it)}{it.location ? ` · ${it.location}` : ""} · {it.category}</small>
+            {(it.tasks?.length ?? 0) > 0 && <div className="company-schedule-note"><span>課題・準備 {it.tasks!.filter((t) => t.done).length}/{it.tasks!.length}</span><p>{it.tasks!.map((t) => `${t.done ? "☑" : "☐"} ${t.text}`).join("\n")}</p></div>}
+            {([["概要", it.summary], ["感想", it.impressions], ["学んだこと", it.learned], ["メモ", it.memo]] as const).filter(([, v]) => v).map(([label, v]) => <div className="company-schedule-note" key={label}><span>{label}</span><p>{v}</p></div>)}
+          </div>)}
+          {!companySchedule.length && <p className="child-empty-hint">この企業に紐づく予定はまだありません。予定を追加するときに企業を選ぶと、ここに表示されます。</p>}
+        </div>
+      </div>
       <div className="editor-section flush">
         <h3>面接後の振り返りメモ</h3>
         <div className="reflection-log-form"><input type="date" value={logDraft.date} onChange={(event) => setLogDraft((d) => ({ ...d, date: event.target.value }))} /><AutoGrowTextarea value={logDraft.note} onChange={(event) => setLogDraft((d) => ({ ...d, note: event.target.value }))} placeholder="面接で聞かれたこと、手応え、次に活かしたい点など" /><button type="button" className="secondary-button" onClick={addLog}><Plus size={15} />メモを追加</button></div>
@@ -1425,9 +1461,9 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
   </div>;
 }
 
-function ScheduleScreen({ schedule, setSchedule, companies, onNavigate }: { schedule: ScheduleItem[]; setSchedule: Dispatch<SetStateAction<ScheduleItem[]>>; companies: Company[]; onNavigate: (s: Screen) => void }) {
+function ScheduleScreen({ schedule, setSchedule, companies, setCompanies, onNavigate }: { schedule: ScheduleItem[]; setSchedule: Dispatch<SetStateAction<ScheduleItem[]>>; companies: Company[]; setCompanies: Dispatch<SetStateAction<Company[]>>; onNavigate: (s: Screen) => void }) {
   const [show, setShow] = useState(false);
-  const emptyDraft = { title: "", date: today, time: "19:00", category: "その他", companyId: null as string | null };
+  const emptyDraft = { title: "", date: today, time: "", endTime: "", location: "", category: "その他", companyId: null as string | null };
   const [draft, setDraft] = useState(emptyDraft);
   // 企業フィルタ: "all" = 全企業, "none" = 企業を指定していない予定, それ以外 = 企業ID
   const [companyFilter, setCompanyFilter] = useState<string>("all");
@@ -1447,9 +1483,10 @@ function ScheduleScreen({ schedule, setSchedule, companies, onNavigate }: { sche
   const add = () => {
     if (!draft.title) return toast.error("予定名を入力してください");
     if (!draft.category.trim()) return toast.error("カテゴリを入力してください");
-    const byTime = (a: ScheduleItem, b: ScheduleItem) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`);
-    if (editingId) setSchedule((c) => c.map((x) => x.id === editingId ? { ...x, ...draft, category: draft.category.trim() } : x).sort(byTime));
-    else setSchedule((c) => [...c, { ...draft, category: draft.category.trim(), id: `task-${Date.now()}`, done: false }].sort(byTime));
+    if (draft.time && draft.endTime && draft.endTime < draft.time) return toast.error("終了時間は開始時間より後にしてください");
+    const fields = { ...draft, category: draft.category.trim(), location: draft.location.trim() };
+    if (editingId) setSchedule((c) => c.map((x) => x.id === editingId ? { ...x, ...fields } : x).sort(byScheduleTime));
+    else setSchedule((c) => [...c, { ...fields, id: `task-${Date.now()}`, done: false }].sort(byScheduleTime));
     setDraft({ ...emptyDraft, companyId: companyFilter !== "all" && companyFilter !== "none" ? companyFilter : null }); setShow(false); toast.success(editingId ? "予定を更新しました" : "予定を追加しました"); setEditingId(null);
   };
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -1459,20 +1496,34 @@ function ScheduleScreen({ schedule, setSchedule, companies, onNavigate }: { sche
   const hasNoCompany = schedule.some((i) => !i.companyId || !companyName(i.companyId));
   const visible = schedule.filter((i) => companyFilter === "all" ? true : companyFilter === "none" ? (!i.companyId || !companyName(i.companyId)) : i.companyId === companyFilter);
   const openForm = () => { if (show) { setShow(false); setEditingId(null); return; } setEditingId(null); setDraft({ ...emptyDraft, companyId: companyFilter !== "all" && companyFilter !== "none" ? companyFilter : null }); setShow(true); };
-  const startEdit = (item: ScheduleItem) => { setEditingId(item.id); setDraft({ title: item.title, date: item.date, time: item.time, category: item.category, companyId: item.companyId && companyName(item.companyId) ? item.companyId : null }); setShow(true); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const startEdit = (item: ScheduleItem) => { setEditingId(item.id); setDraft({ title: item.title, date: item.date, time: item.time, endTime: item.endTime ?? "", location: item.location ?? "", category: item.category, companyId: item.companyId && companyName(item.companyId) ? item.companyId : null }); setShow(true); window.scrollTo({ top: 0, behavior: "smooth" }); };
   // 完了済み（チェック済み、または日付を過ぎた予定）は消さずにここへまとめる
   const isArchived = (i: ScheduleItem) => i.done || i.date < today;
   const active = visible.filter((i) => !isArchived(i));
-  const archived = visible.filter(isArchived).sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`));
-  const renderItem = (item: ScheduleItem) => { const col = colorOf(item.category); const cn = companyName(item.companyId); return <div className={`timeline-item ${item.done ? "done" : urgency(item)} ${col ? `cat-color-${col}` : ""}`} key={item.id}><button className="check-circle" aria-label={item.done ? "未完了に戻す" : "完了にする"} onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main timeline-main-tap" role="button" tabIndex={0} aria-label={`${item.title}の詳細を開く`} onClick={() => openDetail(item.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(item.id); } }}><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><div className="timeline-tags"><span className={`category-pill ${col ? `cat-color-${col}` : ""}`}>{item.category}</span>{cn && <span className="category-pill company-pill">{cn}</span>}{!item.done && item.date < today && <span className="category-pill overdue-pill">期限切れ</span>}{(item.summary || item.impressions || item.learned || item.memo) && <span className="category-pill note-pill">メモあり</span>}</div></div><button className="delete-plain" aria-label="予定を編集" onClick={() => startEdit(item)}><Pencil size={16} /></button><button className="delete-plain" aria-label="予定を削除" onClick={() => { if (window.confirm(`「${item.title}」を削除しますか？`)) setSchedule((c) => c.filter((x) => x.id !== item.id)); }}><Trash2 size={16} /></button></div>; };
+  const archived = visible.filter(isArchived).sort((a, b) => byScheduleTime(b, a));
+  // 完了にしたとき、企業に紐づく予定なら選考ステータスを次へ進めるか聞く。
+  const STAGE_FLOW: CompanyStage[] = ["未応募", "エントリー", "ES提出", "一次面接", "二次面接", "最終面接", "内定"];
+  const toggleDone = (item: ScheduleItem) => {
+    setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x));
+    if (item.done || !item.companyId) return;
+    const company = companies.find((c) => c.id === item.companyId);
+    if (!company) return;
+    const idx = STAGE_FLOW.indexOf(stageOf(company));
+    if (idx < 0 || idx >= STAGE_FLOW.length - 1) return;
+    const next = STAGE_FLOW[idx + 1];
+    toast(`「${company.name}」の選考ステータスを「${next}」に進めますか？`, { duration: 9000, action: { label: "進める", onClick: () => { setCompanies((cur) => cur.map((c) => c.id === company.id ? { ...c, stage: next, updatedAt: today } : c)); toast.success(`${company.name}：${next}に更新しました`); } } });
+  };
+  const renderItem = (item: ScheduleItem) => { const col = colorOf(item.category); const cn = companyName(item.companyId); return <div className={`timeline-item ${item.done ? "done" : urgency(item)} ${col ? `cat-color-${col}` : ""}`} key={item.id}><button className="check-circle" aria-label={item.done ? "未完了に戻す" : "完了にする"} onClick={() => toggleDone(item)}>{item.done && <Check size={14} />}</button><div className="timeline-main timeline-main-tap" role="button" tabIndex={0} aria-label={`${item.title}の詳細を開く`} onClick={() => openDetail(item.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(item.id); } }}><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {formatTimeRange(item)}</span></div>{item.location && <div className="timeline-location"><MapPin size={12} />{item.location}</div>}<div className="timeline-tags"><span className={`category-pill ${col ? `cat-color-${col}` : ""}`}>{item.category}</span>{cn && <span className="category-pill company-pill">{cn}</span>}{!item.done && item.date < today && <span className="category-pill overdue-pill">期限切れ</span>}{(item.tasks?.length ?? 0) > 0 && <span className={`category-pill ${item.tasks!.every((t) => t.done) ? "note-pill" : "todo-pill"}`}>課題・準備 {item.tasks!.filter((t) => t.done).length}/{item.tasks!.length}</span>}{(item.summary || item.impressions || item.learned || item.memo) && <span className="category-pill note-pill">メモあり</span>}</div></div><button className="delete-plain" aria-label="予定を編集" onClick={() => startEdit(item)}><Pencil size={16} /></button><button className="delete-plain" aria-label="予定を削除" onClick={() => { if (window.confirm(`「${item.title}」を削除しますか？`)) setSchedule((c) => c.filter((x) => x.id !== item.id)); }}><Trash2 size={16} /></button></div>; };
   const detail = detailId ? schedule.find((i) => i.id === detailId) : undefined;
-  if (detail) return <ScheduleDetail key={detail.id} item={detail} companyName={companyName(detail.companyId)} colorKey={colorOf(detail.category)} onClose={closeDetail} onSave={(patch) => { setSchedule((c) => c.map((x) => x.id === detail.id ? { ...x, ...patch } : x)); toast.success("保存しました"); }} onToggleDone={() => setSchedule((c) => c.map((x) => x.id === detail.id ? { ...x, done: !x.done } : x))} />;
+  if (detail) return <ScheduleDetail key={detail.id} item={detail} companyName={companyName(detail.companyId)} colorKey={colorOf(detail.category)} onClose={closeDetail} onSave={(patch) => { setSchedule((c) => c.map((x) => x.id === detail.id ? { ...x, ...patch } : x)); toast.success("保存しました"); }} onToggleDone={() => toggleDone(detail)} />;
   return <div className="screen"><Header title="就活スケジュール" eyebrow="スケジュール" onMenu={() => onNavigate("settings")} /><section className="schedule-hero"><div><p className="eyebrow light">前進あるのみ</p><h2>締切から逆算して、<br />今日やることを決める。</h2></div><CalendarDays size={48} /></section>
     <div className="section-heading"><div><p className="eyebrow">タイムライン</p><h2>やることリスト</h2></div><button className="primary-button" onClick={openForm}><Plus size={17} />予定追加</button></div>
     {show && <div className="inline-form schedule-form"><div className="form-grid">
       <label className="wide">予定名<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="例：一次面接の準備" /></label>
       <label>日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
-      <label>時間<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label>
+      <label>開始時間（任意）<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label>
+      <label>終了時間（任意）<input type="time" value={draft.endTime} onChange={(e) => setDraft({ ...draft, endTime: e.target.value })} /></label>
+      <label className="wide">開催場所（任意）<input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} placeholder="例：オンライン（Zoom） / 本社 東京都〇〇" /></label>
       <label className="wide">企業（任意）<select value={draft.companyId ?? ""} onChange={(e) => setDraft({ ...draft, companyId: e.target.value || null })}><option value="">指定しない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
       <label className="wide">カテゴリ<CategoryPicker value={draft.category} categories={categories} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label>
       <div className="wide schedule-color-field"><span>カテゴリの色{draft.category.trim() ? `（${draft.category.trim()}）` : ""}</span><div className="color-swatch-row">{CARD_COLORS.map((c) => <button type="button" key={c} className={`color-swatch color-swatch-${c}`} aria-label={CARD_COLOR_LABEL[c]} aria-pressed={colorOf(draft.category.trim()) === c} disabled={!draft.category.trim()} onClick={() => setCategoryColor(draft.category, colorOf(draft.category.trim()) === c ? null : c)}>{colorOf(draft.category.trim()) === c && <Check size={13} />}</button>)}</div></div>
@@ -1490,9 +1541,12 @@ function ScheduleScreen({ schedule, setSchedule, companies, onNavigate }: { sche
   </div>; }
 
 // 予定カードをタップして開く全画面ページ — 概要・感想・学んだこと・メモを書き残す。
-function ScheduleDetail({ item, companyName, colorKey, onClose, onSave, onToggleDone }: { item: ScheduleItem; companyName?: string; colorKey?: CardColor; onClose: () => void; onSave: (patch: Pick<ScheduleItem, "summary" | "impressions" | "learned" | "memo">) => void; onToggleDone: () => void }) {
+function ScheduleDetail({ item, companyName, colorKey, onClose, onSave, onToggleDone }: { item: ScheduleItem; companyName?: string; colorKey?: CardColor; onClose: () => void; onSave: (patch: Pick<ScheduleItem, "summary" | "impressions" | "learned" | "memo" | "tasks">) => void; onToggleDone: () => void }) {
   const [form, setForm] = useState({ summary: item.summary ?? "", impressions: item.impressions ?? "", learned: item.learned ?? "", memo: item.memo ?? "" });
-  const dirty = form.summary !== (item.summary ?? "") || form.impressions !== (item.impressions ?? "") || form.learned !== (item.learned ?? "") || form.memo !== (item.memo ?? "");
+  const [tasks, setTasks] = useState<ScheduleTodo[]>(item.tasks ?? []);
+  const [newTask, setNewTask] = useState("");
+  const addTask = () => { const text = newTask.trim(); if (!text) return; setTasks((t) => [...t, { id: `todo-${Date.now()}`, text, done: false }]); setNewTask(""); };
+  const dirty = form.summary !== (item.summary ?? "") || form.impressions !== (item.impressions ?? "") || form.learned !== (item.learned ?? "") || form.memo !== (item.memo ?? "") || JSON.stringify(tasks) !== JSON.stringify(item.tasks ?? []);
   const back = () => { if (!dirty || window.confirm("保存していない変更があります。破棄して戻りますか？")) onClose(); };
   const fields: { key: keyof typeof form; label: string; placeholder: string }[] = [
     { key: "summary", label: "概要", placeholder: "この予定の内容・目的・流れなど" },
@@ -1501,11 +1555,24 @@ function ScheduleDetail({ item, companyName, colorKey, onClose, onSave, onToggle
     { key: "memo", label: "メモ", placeholder: "その他、自由に" },
   ];
   return <div className="screen company-page schedule-detail-page">
-    <div className="company-page-topbar"><button className="text-button mode-back-link" onClick={back}><ArrowLeft size={15} />予定一覧に戻る</button><button className="primary-button company-page-save" onClick={() => onSave(form)}><Check size={16} />保存する{dirty && <span className="unsaved-dot" aria-label="未保存の変更あり" />}</button></div>
+    <div className="company-page-topbar"><button className="text-button mode-back-link" onClick={back}><ArrowLeft size={15} />予定一覧に戻る</button><button className="primary-button company-page-save" onClick={() => onSave({ ...form, tasks })}><Check size={16} />保存する{dirty && <span className="unsaved-dot" aria-label="未保存の変更あり" />}</button></div>
     <section className={`company-page-card ${colorKey ? `cat-color-${colorKey}` : ""}`}>
       <div className="schedule-detail-head"><p className="eyebrow">予定の記録</p><h2>{item.title}</h2>
-        <div className="timeline-tags"><span className="schedule-detail-date">{item.date} · {item.time}</span><span className={`category-pill ${colorKey ? `cat-color-${colorKey}` : ""}`}>{item.category}</span>{companyName && <span className="category-pill company-pill">{companyName}</span>}</div>
+        <div className="timeline-tags"><span className="schedule-detail-date">{item.date} · {formatTimeRange(item)}</span><span className={`category-pill ${colorKey ? `cat-color-${colorKey}` : ""}`}>{item.category}</span>{companyName && <span className="category-pill company-pill">{companyName}</span>}</div>
+        {item.location && <div className="timeline-location"><MapPin size={13} />{item.location}</div>}
         <button type="button" className={`field-status-chip ${item.done ? "active" : ""}`} aria-pressed={item.done} onClick={onToggleDone}><Check size={11} />{item.done ? "完了済み" : "完了にする"}</button>
+      </div>
+      <div className="schedule-todo-section">
+        <h3>課題・準備 {tasks.length > 0 && <span className="count-badge">{tasks.filter((t) => t.done).length}/{tasks.length}</span>}</h3>
+        <div className="schedule-todo-list">
+          {tasks.map((t) => <div className={`schedule-todo-row ${t.done ? "done" : ""}`} key={t.id}>
+            <button type="button" className="check-circle" aria-label={t.done ? "未完了に戻す" : "完了にする"} aria-pressed={t.done} onClick={() => setTasks((cur) => cur.map((x) => x.id === t.id ? { ...x, done: !x.done } : x))}>{t.done && <Check size={14} />}</button>
+            <input value={t.text} aria-label="課題・準備の内容" onChange={(e) => setTasks((cur) => cur.map((x) => x.id === t.id ? { ...x, text: e.target.value } : x))} />
+            <button type="button" className="delete-plain" aria-label="削除" onClick={() => setTasks((cur) => cur.filter((x) => x.id !== t.id))}><Trash2 size={15} /></button>
+          </div>)}
+          {!tasks.length && <p className="child-empty-hint">提出物・事前課題・持ち物などを追加して、終わったらチェックできます。</p>}
+        </div>
+        <div className="schedule-todo-add"><input value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); addTask(); } }} placeholder="例：履歴書を印刷する／課題を提出する" /><button type="button" className="secondary-button" onClick={addTask}><Plus size={15} />追加</button></div>
       </div>
       <div className="form-grid">{fields.map((f) => <label className="wide" key={f.key}>{f.label}<AutoGrowTextarea value={form[f.key]} onChange={(e) => setForm((d) => ({ ...d, [f.key]: e.target.value }))} placeholder={f.placeholder} /></label>)}</div>
     </section>
@@ -1529,8 +1596,8 @@ function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { 
     formatVersion: 1,
   });
   const download = (bytes: Uint8Array, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type })); const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); };
-  const backup = () => { download(strToU8(JSON.stringify(getData(), null, 2)), `career-compass-backup-${today}.json`, "application/json"); setStatus("JSONバックアップを書き出しました"); };
-  const backupZip = () => { const data = getData(); download(createBackupZip(data), `career-compass-backup-${today}.zip`, "application/zip"); setStatus("ZIPバックアップを書き出しました"); };
+  const backup = () => { download(strToU8(JSON.stringify(getData(), null, 2)), `career-compass-backup-${today}.json`, "application/json"); try { localStorage.setItem("cc_last_backup", new Date().toISOString()); } catch { /* ignore */ } setStatus("JSONバックアップを書き出しました"); };
+  const backupZip = () => { const data = getData(); download(createBackupZip(data), `career-compass-backup-${today}.zip`, "application/zip"); try { localStorage.setItem("cc_last_backup", new Date().toISOString()); } catch { /* ignore */ } setStatus("ZIPバックアップを書き出しました"); };
   const restore = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const isZip = file.name.toLowerCase().endsWith(".zip"); const reader = new FileReader(); reader.onload = () => { try { const bytes = isZip ? new Uint8Array(reader.result as ArrayBuffer) : strToU8(String(reader.result)); const data = parseBackupBytes(bytes, file.name) as CloudPayload; (Object.keys(BACKUP_FIELD_KEYS) as Array<keyof CloudPayload>).forEach((field) => { const value = data[field]; if (Array.isArray(value)) localStorage.setItem(BACKUP_FIELD_KEYS[field], JSON.stringify(value)); }); setStatus("バックアップを復元しました。画面を再読み込みします"); setTimeout(() => location.reload(), 700); } catch { setStatus("バックアップを読み込めませんでした。Career CompassのJSONまたはZIPを選択してください"); } }; if (isZip) reader.readAsArrayBuffer(file); else reader.readAsText(file); e.target.value = ""; };
   return <div className="screen"><Header title="設定" eyebrow="アプリ設定" onMenu={() => onNavigate("home")} /><section className="page-lead"><div><p className="eyebrow">マイスペース</p><h2>安心して、積み上げる</h2><p>アプリの更新でデータが消えないように、この端末に自動保存しています。</p></div><Settings size={42} /></section><section className="settings-card"><div className="settings-icon purple">{theme === "dark" ? <Moon size={20} /> : <Sun size={20} />}</div><div><h3>表示</h3><p>ダークモードと文字サイズを、この端末向けに調整できます。</p><div className="display-settings-row"><span className="display-settings-label">配色</span><div className="chip-row"><button className={`chip ${theme === "light" ? "selected" : ""}`} onClick={() => theme === "dark" && toggleTheme?.()}><Sun size={13} />ライト</button><button className={`chip ${theme === "dark" ? "selected" : ""}`} onClick={() => theme === "light" && toggleTheme?.()}><Moon size={13} />ダーク</button></div></div><div className="display-settings-row"><span className="display-settings-label">文字サイズ</span><div className="chip-row">{(Object.keys(FONT_SCALE_LABEL) as FontScale[]).map((scale) => <button key={scale} className={`chip ${fontScale === scale ? "selected" : ""}`} onClick={() => setFontScale(scale)}>{FONT_SCALE_LABEL[scale]}</button>)}</div></div></div></section><section className="settings-card"><div className="settings-icon"><FileDown size={20} /></div><div><h3>就活データのバックアップ</h3><p>企業・面接カード・予定・自己PR・逆質問メモ・グループディスカッションのメモをJSONまたはZIPで保存できます。パソコンとスマホでデータを揃えたいときは、こちらのZIPを一方で書き出して、もう一方で復元してください。</p>{/* 復元 gets its own amber tone (see .restore-button) rather than the same
     purple as the two save buttons — it overwrites whatever is already on
@@ -1982,5 +2049,5 @@ export default function Home() {
     }).catch(() => toast.error("更新の確認に失敗しました。通信状態を確認してください"));
   };
 
-  return <div className="app-shell" style={{ zoom: FONT_SCALE_VALUE[fontScale] } as React.CSSProperties}><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} cards={cards} onNavigate={setScreen} />}{screen === "interview" && <InterviewHub cards={cards} setCards={setCards} companies={companies} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} companies={companies} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} fontScale={fontScale} setFontScale={setFontScale} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
+  return <div className="app-shell" style={{ zoom: FONT_SCALE_VALUE[fontScale] } as React.CSSProperties}><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} cards={cards} schedule={schedule} onNavigate={setScreen} />}{screen === "interview" && <InterviewHub cards={cards} setCards={setCards} companies={companies} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} companies={companies} setCompanies={setCompanies} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} fontScale={fontScale} setFontScale={setFontScale} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
 }

@@ -51,7 +51,9 @@ export type Company = {
   programs: string; payOvertimeSystem: string; workHoursHolidays: string; industryAvgSalary: string;
   revenue: string; customers: string; competitiveEdge: string; outlook: string; recruitingInfo: string;
   annualHiringTrend: string;
-  // 社員の声・学生の声をまとめた「体験談」（旧データは起動時に引き継ぐ）
+  // 体験談（社員の声・学生の声・選考体験談など）は基本情報とは別タブで、複数件を記録する。
+  // 旧データは起動時に引き継ぐ。`experience`は以前の版の名残（読み込み専用）。
+  experiences?: ExperienceEntry[];
   experience?: string;
   stage?: CompanyStage; interviewLogs?: InterviewLogEntry[]; tags?: string[];
   fieldStatus?: Partial<Record<CompanyFieldKey, FieldStatus>>;
@@ -63,9 +65,15 @@ export type Company = {
 // company, since someone who cares about salary and someone who wants
 // 企業理念 first both want that choice to stick everywhere, not per
 // company. 企業名 isn't here: it's the editor's own title, always first.
+export type ExperienceKind = "employee" | "student" | "selection" | "other";
+export type ExperienceEntry = { id: string; kind: ExperienceKind; title: string; text: string; source: string; createdAt: string };
+const EXPERIENCE_KINDS: { key: ExperienceKind; label: string }[] = [
+  { key: "employee", label: "社員の声" }, { key: "student", label: "学生の声" },
+  { key: "selection", label: "選考体験談" }, { key: "other", label: "その他" },
+];
 export type CompanyFieldKey =
   | "industry" | "interest" | "interestScore" | "startingSalary" | "avgSalaryGraduate" | "location"
-  | "business" | "benefits" | "holidays" | "philosophy" | "person" | "experience"
+  | "business" | "benefits" | "holidays" | "philosophy" | "person"
   | "strengthFit" | "notes" | "sources" | "tags"
   | "companyOverview" | "founded" | "capital" | "employeeCount" | "avgAge" | "programs"
   | "payOvertimeSystem" | "workHoursHolidays" | "industryAvgSalary" | "revenue" | "customers"
@@ -74,7 +82,7 @@ export const COMPANY_FIELD_LABELS: Record<CompanyFieldKey, string> = {
   industry: "業界", interest: "志望度（★評価）", interestScore: "志望度スコア",
   startingSalary: "初任給", avgSalaryGraduate: "平均年収（学部卒）", location: "勤務地",
   business: "事業内容", benefits: "福利厚生", holidays: "休日制度・年間休日・休暇制度",
-  philosophy: "企業理念", person: "求める人物像", experience: "体験談",
+  philosophy: "企業理念", person: "求める人物像",
   strengthFit: "自分の強みが生かせるか", notes: "自分のメモ",
   sources: "参考URL", tags: "タグ",
   companyOverview: "企業概要", founded: "設立", capital: "資本金", employeeCount: "社員数",
@@ -91,7 +99,6 @@ export const DEFAULT_COMPANY_FIELD_ORDER: CompanyFieldKey[] = [
   "recruitingInfo", "annualHiringTrend",
   "person", "outlook",
   "interest", "interestScore", "strengthFit",
-  "experience",
   "notes", "sources", "tags",
 ];
 export type SelfRating = "excellent" | "good" | "fair" | "poor";
@@ -587,8 +594,6 @@ function renderCompanyField(key: CompanyFieldKey, draft: Company, update: (key: 
       return <label key={key} className="wide">企業理念<AutoGrowTextarea value={draft.philosophy} onChange={(e) => update("philosophy", e.target.value)} placeholder="企業理念・ミッションを記入" /></label>;
     case "person":
       return <label key={key} className="wide">求める人物像<AutoGrowTextarea value={draft.person} onChange={(e) => update("person", e.target.value)} placeholder="採用ページなどから記入" /></label>;
-    case "experience":
-      return <label key={key} className="wide">体験談<AutoGrowTextarea value={draft.experience ?? ""} onChange={(e) => update("experience", e.target.value)} placeholder="社員の声（OB・OG訪問や座談会）、学生の声（口コミなど）、先輩の選考体験談など" /></label>;
     case "strengthFit":
       return <label key={key} className="wide">自分の強みが生かせるか<AutoGrowTextarea value={draft.strengthFit} onChange={(e) => update("strengthFit", e.target.value)} placeholder="自分のどんな強み・経験が活かせそうか" /></label>;
     case "notes":
@@ -663,7 +668,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   // added on top of the original basic-info form — enough that it read as
   // one long wall of fields. Splitting it into tabs means only one section's
   // worth of controls is visible at a time.
-  const [tab, setTab] = useState<"basic" | "progress" | "cards">("basic");
+  const [tab, setTab] = useState<"basic" | "progress" | "cards" | "experience">("basic");
   // The stage row only exists in the DOM once the 進捗・メモ tab is actually
   // shown, so re-measure whenever `tab` changes rather than just once on
   // mount (when this element isn't rendered yet).
@@ -681,9 +686,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   // against the current field list so a future new field still shows up
   // (appended at the end) even if it isn't in someone's already-saved order.
   const [fieldOrder, setFieldOrder] = usePersisted<CompanyFieldKey[]>("cc_company_field_order", DEFAULT_COMPANY_FIELD_ORDER);
-  // 旧データの「社員の声」「学生の声」は「体験談」1つにまとめる（元の並び位置を引き継ぐ）
-  const migratedOrder = Array.from(new Set((fieldOrder as string[]).map((k) => (k === "employeeVoice" || k === "studentVoice" ? "experience" : k)))) as CompanyFieldKey[];
-  const normalizedFieldOrder = [...migratedOrder.filter((k) => DEFAULT_COMPANY_FIELD_ORDER.includes(k)), ...DEFAULT_COMPANY_FIELD_ORDER.filter((k) => !migratedOrder.includes(k))];
+  const normalizedFieldOrder = [...fieldOrder.filter((k) => DEFAULT_COMPANY_FIELD_ORDER.includes(k)), ...DEFAULT_COMPANY_FIELD_ORDER.filter((k) => !fieldOrder.includes(k))];
   const [reorderingFields, setReorderingFields] = useState(false);
   const [logDraft, setLogDraft] = useState({ date: today, note: "" });
   const logs = draft.interviewLogs ?? [];
@@ -693,6 +696,20 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
     setDraft((d) => ({ ...d, interviewLogs: [entry, ...(d.interviewLogs ?? [])] }));
     setLogDraft({ date: today, note: "" });
   };
+  const experiences = draft.experiences ?? [];
+  const [expFilter, setExpFilter] = useState<"all" | ExperienceKind>("all");
+  const [expForm, setExpForm] = useState<{ id: string | null; kind: ExperienceKind; title: string; text: string; source: string } | null>(null);
+  const saveExpForm = () => {
+    if (!expForm) return;
+    if (!expForm.text.trim()) return toast.error("内容を入力してください");
+    const entry: ExperienceEntry = { id: expForm.id ?? `exp-${Date.now()}`, kind: expForm.kind, title: expForm.title.trim(), text: expForm.text.trim(), source: expForm.source.trim(), createdAt: experiences.find((e) => e.id === expForm.id)?.createdAt ?? new Date().toISOString() };
+    setDraft((d) => {
+      const list = d.experiences ?? [];
+      return { ...d, experiences: expForm.id ? list.map((e) => (e.id === entry.id ? entry : e)) : [entry, ...list] };
+    });
+    setExpForm(null);
+  };
+  const removeExperience = (id: string) => { if (window.confirm("この体験談を削除しますか？")) setDraft((d) => ({ ...d, experiences: (d.experiences ?? []).filter((e) => e.id !== id) })); };
   const removeLog = (id: string) => setDraft((d) => ({ ...d, interviewLogs: (d.interviewLogs ?? []).filter((l) => l.id !== id) }));
   // Interview cards written specifically for this company — linked from the
   // card's own editor (see InterviewScreen's company picker). Shown here
@@ -702,7 +719,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   const companySchedule = schedule.filter((i) => i.companyId === company.id).sort((a, b) => scheduleSortKey(b).localeCompare(scheduleSortKey(a)));
   const [flippedId, setFlippedId] = useState<string | null>(null);
   const [pickingCards, setPickingCards] = useState(false);
-  const tabsHint = useEdgeScrollHint<HTMLDivElement>([logs.length, linkedCards.length]);
+  const tabsHint = useEdgeScrollHint<HTMLDivElement>([logs.length, linkedCards.length, (draft.experiences ?? []).length]);
   // Shares only the "public-facing research" fields of whatever is currently
   // in the draft (so an unsaved edit is reflected), never 自分のメモ or
   // 振り返りメモ — see lib/share.ts for why those stay out entirely.
@@ -740,6 +757,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
       <button className={tab === "basic" ? "active" : ""} onClick={() => setTab("basic")}>基本情報</button>
       <button className={tab === "progress" ? "active" : ""} onClick={() => setTab("progress")}>進捗・メモ{logs.length > 0 && <small>{logs.length}</small>}</button>
       <button className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>紐づくカード{linkedCards.length > 0 && <small>{linkedCards.length}</small>}</button>
+      <button className={tab === "experience" ? "active" : ""} onClick={() => setTab("experience")}>体験談{experiences.length > 0 && <small>{experiences.length}</small>}</button>
     </div>{tabsHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
     {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label>{normalizedFieldOrder.map((key) => {
       const field = renderCompanyField(key, draft, update);
@@ -781,6 +799,39 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
         </div>
       </div>
     </>}
+    {tab === "experience" && <div className="experience-tab">
+      <div className="editor-section flush">
+        <h3>体験談 <span className="count-badge">{experiences.length}</span></h3>
+        <p className="company-cards-hint">社員の声・学生の声・「こうしたら面接に通った」などを、1件ずつ分けて残せます。</p>
+        <div className="experience-filter">
+          {([{ key: "all", label: "すべて" }, ...EXPERIENCE_KINDS] as { key: "all" | ExperienceKind; label: string }[]).map((k) => {
+            const n = k.key === "all" ? experiences.length : experiences.filter((e) => e.kind === k.key).length;
+            return <button key={k.key} type="button" className={expFilter === k.key ? "active" : ""} onClick={() => setExpFilter(k.key)}>{k.label}<small>{n}</small></button>;
+          })}
+        </div>
+        {!expForm && <button type="button" className="secondary-button" onClick={() => setExpForm({ id: null, kind: expFilter === "all" ? "employee" : expFilter, title: "", text: "", source: "" })}><Plus size={15} />体験談を追加</button>}
+        {expForm && <div className="experience-form">
+          <div className="experience-kind-picker">{EXPERIENCE_KINDS.map((k) => <button key={k.key} type="button" className={expForm.kind === k.key ? "active" : ""} onClick={() => setExpForm({ ...expForm, kind: k.key })}>{k.label}</button>)}</div>
+          <input value={expForm.title} onChange={(e) => setExpForm({ ...expForm, title: e.target.value })} placeholder="タイトル（任意） 例：技術職の座談会で聞いた話" />
+          <AutoGrowTextarea value={expForm.text} onChange={(e) => setExpForm({ ...expForm, text: e.target.value })} placeholder="内容を書く" />
+          <input value={expForm.source} onChange={(e) => setExpForm({ ...expForm, source: e.target.value })} placeholder="出どころ（任意） 例：OB訪問、口コミサイト、先輩から" />
+          <div className="experience-form-actions"><button type="button" className="secondary-button" onClick={() => setExpForm(null)}>やめる</button><button type="button" className="primary-button" onClick={saveExpForm}>{expForm.id ? "更新する" : "追加する"}</button></div>
+        </div>}
+        <div className="experience-list">
+          {experiences.filter((e) => expFilter === "all" || e.kind === expFilter).map((e) => (
+            <article key={e.id} className="experience-entry">
+              <div className="experience-entry-head"><span className={`experience-kind kind-${e.kind}`}>{EXPERIENCE_KINDS.find((k) => k.key === e.kind)?.label}</span>{e.title && <strong>{e.title}</strong>}
+                <button type="button" className="icon-button" aria-label="編集" onClick={() => setExpForm({ id: e.id, kind: e.kind, title: e.title, text: e.text, source: e.source })}><Pencil size={14} /></button>
+                <button type="button" className="icon-button" aria-label="削除" onClick={() => removeExperience(e.id)}><Trash2 size={14} /></button></div>
+              <p className="experience-entry-text">{e.text}</p>
+              {e.source && <small className="experience-entry-source">出どころ：{e.source}</small>}
+            </article>
+          ))}
+          {!experiences.length && !expForm && <p className="child-empty-hint">まだ体験談がありません。OB訪問や説明会で聞いた話、通った人の話などを残しておきましょう。</p>}
+        </div>
+        <p className="company-cards-hint">追加・編集したあとは、右上の「保存する」で確定します。</p>
+      </div>
+    </div>}
     {tab === "cards" && <div className="company-cards-tab">
       <div className="editor-section flush">
         <h3>この企業の面接カード <span className="count-badge">{linkedCards.length + extraCards.length}</span></h3>
@@ -1084,15 +1135,6 @@ function InterviewScreen({ cards, setCards, companies, onNavigate, onBack }: { c
   // Keep categoryOrder in sync with whatever categories actually show up on
   // cards (e.g. restored from a backup, or from the starter data), without
   // ever dropping a category the user created but hasn't used yet.
-  // 「体験談」カテゴリを一度だけ追加（あとで名前変更・並べ替えは自由）
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("cc_cat_experience_added")) return;
-      localStorage.setItem("cc_cat_experience_added", "1");
-      setCategoryOrder((current) => (current.includes("体験談") ? current : [...current, "体験談"]));
-    } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   useEffect(() => {
     const missing = Array.from(new Set(cards.map((card) => card.category))).filter((item) => !categoryOrder.includes(item));
     if (missing.length) setCategoryOrder((current) => [...current, ...missing]);
@@ -2150,14 +2192,21 @@ export default function Home() {
   const [cards, setCards] = usePersisted<InterviewCard[]>("cc_cards", starterCards);
   const [schedule, setSchedule] = usePersisted<ScheduleItem[]>("cc_schedule", starterSchedule);
   const [fontScale, setFontScale] = usePersisted<FontScale>("cc_font_scale", "standard");
-  // 「社員の声」「学生の声」→「体験談」：元の文章は消さずに、1つにまとめて引き継ぐ。
+  // 「社員の声」「学生の声」（と前の版の「体験談」1項目）→ 体験談タブの項目：元の文章は消さずに引き継ぐ。
   useEffect(() => {
-    const needs = (c: Company) => c.experience === undefined && !!(c.employeeVoice?.trim() || c.studentVoice?.trim());
+    const needs = (c: Company) => c.experiences === undefined && !!(c.employeeVoice?.trim() || c.studentVoice?.trim() || c.experience?.trim());
     if (!companies.some(needs)) return;
     setCompanies((cur) => cur.map((c) => {
       if (!needs(c)) return c;
-      const parts = [c.employeeVoice?.trim() ? `【社員の声】\n${c.employeeVoice.trim()}` : "", c.studentVoice?.trim() ? `【学生の声】\n${c.studentVoice.trim()}` : ""].filter(Boolean);
-      return { ...c, experience: parts.join("\n\n") };
+      const now = new Date().toISOString();
+      const list: ExperienceEntry[] = [];
+      if (c.experience?.trim()) {
+        list.push({ id: `exp-m-${c.id}-x`, kind: "other", title: "", text: c.experience.trim(), source: "", createdAt: now });
+      } else {
+        if (c.employeeVoice?.trim()) list.push({ id: `exp-m-${c.id}-e`, kind: "employee", title: "", text: c.employeeVoice.trim(), source: "", createdAt: now });
+        if (c.studentVoice?.trim()) list.push({ id: `exp-m-${c.id}-s`, kind: "student", title: "", text: c.studentVoice.trim(), source: "", createdAt: now });
+      }
+      return { ...c, experiences: list };
     }));
   }, [companies]);
   // 同期の自動実行：起動時、アプリに戻ってきたとき、編集の少しあと。

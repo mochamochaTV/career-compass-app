@@ -868,3 +868,22 @@ body { background: var(--background); color: var(--foreground); }
   .field-order-modal .modal-footer { padding-top: 2px; }
   .field-order-modal .modal-footer button { padding: 8px 12px; font-size: 12px; }
 }
+
+/* 体験談タブ */
+.experience-filter{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.experience-filter button,.experience-kind-picker button{border:1px solid var(--border,#d8dde6);background:transparent;color:inherit;border-radius:999px;padding:5px 12px;font-size:.82rem;cursor:pointer}
+.experience-filter button small{margin-left:5px;opacity:.7}
+.experience-filter button.active,.experience-kind-picker button.active{background:#6654d9;border-color:#6654d9;color:#fff}
+.experience-form{display:grid;gap:8px;margin:10px 0;padding:12px;border:1px solid var(--border,#d8dde6);border-radius:12px}
+.experience-kind-picker{display:flex;flex-wrap:wrap;gap:6px}
+.experience-form-actions{display:flex;gap:8px;justify-content:flex-end}
+.experience-list{display:grid;gap:10px;margin-top:12px}
+.experience-entry{border:1px solid var(--border,#d8dde6);border-radius:12px;padding:12px;background:rgba(127,127,127,.05)}
+.experience-entry-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.experience-entry-head strong{flex:1;min-width:0;font-size:.92rem}
+.experience-entry-head .icon-button:first-of-type{margin-left:auto}
+.experience-kind{font-size:.72rem;font-weight:700;padding:2px 9px;border-radius:999px;color:#fff;background:#64748b}
+.experience-kind.kind-employee{background:#6654d9}.experience-kind.kind-student{background:#16a34a}.experience-kind.kind-selection{background:#d97706}
+.experience-entry-text{white-space:pre-wrap;margin:8px 0 4px;line-height:1.7;font-size:.9rem}
+.experience-entry-source{opacity:.7}
+.dark .experience-filter button,.dark .experience-kind-picker button,.dark .experience-form,.dark .experience-entry{border-color:rgba(255,255,255,.18)}

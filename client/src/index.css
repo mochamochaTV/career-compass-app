@@ -842,3 +842,29 @@ body { background: var(--background); color: var(--foreground); }
 .sync-step a.secondary-button { text-decoration: none; justify-content: center; }
 .sync-howto input { width: 100%; margin: 6px 0; }
 .dark .sync-step { background: #232333; border-color: #34344a; }
+/* 項目の表示順：全項目を1画面に（2列・コンパクト） */
+.field-order-modal { width: min(760px, 100%); max-height: calc(100vh - 24px); overflow-y: auto; gap: 8px; }
+.field-order-list { display: grid; grid-auto-flow: column; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; max-height: none; overflow: visible; }
+.field-order-row { gap: 6px; padding: 4px 6px 4px 8px; border-radius: 9px; font-size: 12px; line-height: 1.25; min-width: 0; }
+.field-order-index { flex: none; width: 18px; font-size: 10px; font-weight: 700; color: #9a9ab0; text-align: right; }
+.field-order-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.field-order-buttons { flex: none; display: flex; gap: 3px; }
+.field-order-buttons .order-step-button { width: 28px; height: 28px; }
+.field-order-modal .modal-header { margin-bottom: 0; }
+.field-order-modal .category-manager-hint { margin: 0; font-size: 11px; line-height: 1.4; }
+.field-order-modal .modal-footer { position: static; padding-top: 6px; }
+@media (max-width: 760px) {
+  .modal-backdrop:has(.field-order-modal) { padding: 6px; align-items: start; }
+  .field-order-modal { padding: 10px; gap: 6px; }
+  .field-order-modal .modal-header .eyebrow { display: none; }
+  .field-order-modal .modal-header h2 { font-size: 16px; margin: 0; }
+  .field-order-modal .modal-header .icon-button { width: 30px; height: 30px; }
+  .field-order-modal .category-manager-hint { font-size: 10.5px; }
+  .field-order-list { gap: 3px 5px; }
+  .field-order-row { padding: 3px 4px 3px 6px; gap: 4px; font-size: 11px; }
+  .field-order-index { display: none; }
+  .field-order-buttons { gap: 2px; }
+  .field-order-buttons .order-step-button { width: 26px; height: 26px; border-radius: 7px; }
+  .field-order-modal .modal-footer { padding-top: 2px; }
+  .field-order-modal .modal-footer button { padding: 8px 12px; font-size: 12px; }
+}

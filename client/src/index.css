@@ -836,3 +836,9 @@ body { background: var(--background); color: var(--foreground); }
 .dark .sync-howto code { background: #2a2a3d; }
 .dark .sync-note { color: #9a9ab0; }
 .dark .status-message.sync-error { color: #ff9c9c; }
+.sync-steps { display: grid; gap: 10px; margin: 12px 0; }
+.sync-step { padding: 12px 14px; border: 1px solid #ececf3; border-radius: 12px; background: #fbfbfe; display: grid; gap: 6px; }
+.sync-step p { margin: 0; font-size: 13px; line-height: 1.6; }
+.sync-step a.secondary-button { text-decoration: none; justify-content: center; }
+.sync-howto input { width: 100%; margin: 6px 0; }
+.dark .sync-step { background: #232333; border-color: #34344a; }

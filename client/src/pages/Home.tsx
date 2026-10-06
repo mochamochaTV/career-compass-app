@@ -1646,8 +1646,8 @@ function ScheduleDetail({ item, companyName, colorKey, onClose, onSave, onToggle
 
 function SyncSettingsCard() {
   const saved = getSyncConfig();
-  const [owner, setOwner] = useState(saved?.owner ?? "");
-  const [repo, setRepo] = useState(saved?.repo ?? "");
+  const [owner, setOwner] = useState(saved?.owner ?? "mochamochaTV");
+  const [repo, setRepo] = useState(saved?.repo ?? "career-compass-data");
   const [token, setToken] = useState(saved?.token ?? "");
   const [path, setPath] = useState(saved?.path ?? DEFAULT_SYNC_PATH);
   const [configured, setConfigured] = useState(!!saved);
@@ -1665,6 +1665,27 @@ function SyncSettingsCard() {
     setBusy(true); const r = await syncNow(mode); setBusy(false); setStatus(r);
     r.ok ? toast.success(r.message) : toast.error(r.message);
   };
+  // 2台目への設定入力を楽にする：設定を1つの文字列（コード）にして、貼り付けるだけで読み込む。
+  const [codeInput, setCodeInput] = useState("");
+  const copyCode = async () => {
+    const cfg = getSyncConfig(); if (!cfg) return;
+    const bytes = strToU8(JSON.stringify({ owner: cfg.owner, repo: cfg.repo, token: cfg.token }));
+    let bin = ""; bytes.forEach((b) => { bin += String.fromCharCode(b); });
+    const code = `CC1:${btoa(bin)}`;
+    try { await navigator.clipboard.writeText(code); toast.success("設定コードをコピーしました。もう一台の端末に貼り付けてください（他の人には見せないでください）"); }
+    catch { window.prompt("このコードをコピーして、もう一台の端末に貼り付けてください（他の人には見せないでください）", code); }
+  };
+  const loadCode = () => {
+    try {
+      const raw = codeInput.trim().replace(/^CC1:/, "");
+      const bin = atob(raw); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const c = JSON.parse(new TextDecoder().decode(bytes)) as { owner?: string; repo?: string; token?: string };
+      if (!c.owner || !c.repo || !c.token) throw new Error("bad");
+      setOwner(c.owner); setRepo(c.repo); setToken(c.token);
+      localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify({ owner: c.owner, repo: c.repo, token: c.token, path: DEFAULT_SYNC_PATH }));
+      setConfigured(true); setCodeInput(""); toast.success("設定を読み込みました。次に「クラウドから取り込む」を押してください");
+    } catch { toast.error("設定コードを読み取れませんでした。コピーし直してください"); }
+  };
   const clearConfig = () => {
     if (!window.confirm("この端末の同期設定（トークンを含む）を削除します。クラウド上のデータや、この端末のデータは消えません。")) return;
     [SYNC_CONFIG_KEY, SYNC_BASE_KEY, SYNC_STATUS_KEY].forEach((k) => localStorage.removeItem(k));
@@ -1673,12 +1694,23 @@ function SyncSettingsCard() {
   return <section className="settings-card sync-card"><div className="settings-icon purple"><Link2 size={20} /></div><div>
     <h3>端末間の同期（PC・iPhone）</h3>
     <p>自分のGitHubの非公開リポジトリを使って、データを端末どうしで同期します。設定は端末ごとに1回だけです。</p>
-    <details className="sync-howto"><summary>設定のしかた（初回のみ）</summary><ol>
-      <li>GitHubで<strong>非公開（Private）</strong>のリポジトリを新しく作る（例：<code>career-compass-data</code>）。</li>
-      <li>GitHubの「Settings → Developer settings → Fine-grained personal access tokens」でトークンを作る。対象リポジトリはその1つだけ、「Repository permissions → Contents」を<strong>Read and write</strong>にする。</li>
-      <li>下の欄にユーザー名・リポジトリ名・トークンを入れて「設定を保存」。</li>
-      <li>1台目は「クラウドに保存」、2台目以降は「クラウドから取り込む」を押す。</li>
-    </ol><p className="sync-note">トークンはこの端末のブラウザ内にだけ保存され、バックアップには含まれません。公開リポジトリには同期しません。</p></details>
+    <div className="sync-steps">
+      {!configured && <>
+        <div className="sync-step"><b>① 保管場所を作る</b><p>下のボタンを押すと GitHub が開きます。いちばん下の緑の「Create repository」を押すだけです（非公開のまま変えない）。</p><a className="secondary-button" href="https://github.com/new?name=career-compass-data&visibility=private" target="_blank" rel="noreferrer">保管場所を作るページを開く</a></div>
+        <div className="sync-step"><b>② 合い鍵（トークン）を作る</b><p>開いたページで「Repository access」を「Only select repositories」にして career-compass-data を選び、いちばん下の「Generate token」を押します。出てきた <code>github_pat_</code> から始まる文字をコピーします。</p><a className="secondary-button" href="https://github.com/settings/personal-access-tokens/new?name=career-compass&description=Career%20Compass%E3%81%AE%E5%90%8C%E6%9C%9F%E7%94%A8&expires_in=365&contents=write" target="_blank" rel="noreferrer">合い鍵を作るページを開く</a></div>
+        <div className="sync-step"><b>③ 下の「アクセストークン」に貼り付けて「設定を保存」</b></div>
+        <div className="sync-step"><b>④ 最初の端末は「クラウドに保存」。2台目以降は下の「設定コード」を使うと簡単です。</b></div>
+      </>}
+      {configured && <details className="sync-howto"><summary>もう一台の端末に設定をうつす</summary>
+        <p className="sync-note">この端末で「設定コードをコピー」→ LINEのメモやメールで自分に送る → もう一台の端末で貼り付けて「読み込む」。トークンを打ち直す必要がありません。</p>
+        <button className="secondary-button" onClick={copyCode}><Copy size={16} />設定コードをコピー</button>
+      </details>}
+      {!configured && <details className="sync-howto"><summary>もう一台の端末で、設定コードを使う</summary>
+        <p className="sync-note">もう一台の端末で「設定コードをコピー」したものを、ここに貼り付けます。</p>
+        <input value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="CC1:..." autoCapitalize="off" autoCorrect="off" />
+        <button className="secondary-button" onClick={loadCode}>読み込む</button>
+      </details>}
+    </div>
     <div className="form-grid sync-form">
       <label>GitHubのユーザー名<input value={owner} onChange={(e) => setOwner(e.target.value)} autoCapitalize="off" autoCorrect="off" placeholder="例：mochamochaTV" /></label>
       <label>リポジトリ名<input value={repo} onChange={(e) => setRepo(e.target.value)} autoCapitalize="off" autoCorrect="off" placeholder="例：career-compass-data" /></label>

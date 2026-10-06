@@ -10,6 +10,7 @@ const payload = {
   cardCategories: ["基本", "志望動機"],
   gdTips: [{ id: "gdtip-1", text: "役割に固執しない", updatedAt: "2026-10-05T00:00:00.000Z" }],
   gdThemes: [{ id: "gdtheme-1", companyId: null, theme: "離職を防ぐ施策", summary: "", myThoughts: "", updatedAt: "2026-10-05T00:00:00.000Z" }],
+  scheduleCategoryColors: [{ name: "面接", color: "blue" }],
   exportedAt: "2026-09-17T00:00:00.000Z",
   formatVersion: 1,
 };

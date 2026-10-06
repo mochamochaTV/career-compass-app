@@ -131,7 +131,8 @@ function weightedSample<T>(items: T[], weightOf: (item: T) => number, count: num
 const QUIZ_COUNT_OPTIONS: Array<number | "all"> = [5, 10, 15, 20, "all"];
 const QUIZ_RATING_OPTIONS: Array<{ key: QuizRatingFilter; label: string }> = [...RATING_ORDER.map((r) => ({ key: r as QuizRatingFilter, label: RATING_LABEL[r] })), { key: "none", label: "未評価" }];
 const DEFAULT_QUIZ_SETTINGS: QuizSettings = { count: 10, ratings: QUIZ_RATING_OPTIONS.map((option) => option.key), weighted: false };
-export type ScheduleItem = { id: string; title: string; date: string; time: string; category: string; done: boolean };
+export type ScheduleItem = { id: string; title: string; date: string; time: string; category: string; done: boolean; companyId?: string | null };
+export type ScheduleCategoryColor = { name: string; color: CardColor };
 
 // A named, reusable chunk of self-PR / ガクチカ text — written once, then
 // pasted into whichever company's ES or interview prep needs it, instead of
@@ -177,7 +178,7 @@ const starterSchedule: ScheduleItem[] = [
   { id: "task-3", title: "ES提出期限を登録", date: "2026-09-20", time: "23:59", category: "選考", done: false },
 ];
 
-type CloudPayload = { companies?: Company[]; cards?: InterviewCard[]; schedule?: ScheduleItem[]; pitchTemplates?: PitchTemplate[]; reverseQuestions?: ReverseQuestion[]; cardCategories?: string[]; gdTips?: GdTip[]; gdThemes?: GdTheme[] };
+type CloudPayload = { companies?: Company[]; cards?: InterviewCard[]; schedule?: ScheduleItem[]; pitchTemplates?: PitchTemplate[]; reverseQuestions?: ReverseQuestion[]; cardCategories?: string[]; gdTips?: GdTip[]; gdThemes?: GdTheme[]; scheduleCategoryColors?: ScheduleCategoryColor[] };
 // Maps each backup field to the localStorage key it lives under — the two
 // don't always match (cc_pitch_templates vs. pitchTemplates), so backup/
 // restore share this table instead of each guessing at the other's naming.
@@ -190,6 +191,7 @@ const BACKUP_FIELD_KEYS: Record<keyof CloudPayload, string> = {
   cardCategories: "cc_card_categories",
   gdTips: "cc_gd_tips",
   gdThemes: "cc_gd_themes",
+  scheduleCategoryColors: "cc_schedule_category_colors",
 };
 
 function load<T>(key: string, fallback: T): T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; } }
@@ -1423,15 +1425,50 @@ function QuizPlayScreen({ deck, index, flipped, onFlip, onPrev, onNext, onNaviga
   </div>;
 }
 
-function ScheduleScreen({ schedule, setSchedule, onNavigate }: { schedule: ScheduleItem[]; setSchedule: Dispatch<SetStateAction<ScheduleItem[]>>; onNavigate: (s: Screen) => void }) { const [show, setShow] = useState(false); const [draft, setDraft] = useState({ title: "", date: today, time: "19:00", category: "その他" }); const add = () => { if (!draft.title) return toast.error("予定名を入力してください"); setSchedule((c) => [...c, { ...draft, id: `task-${Date.now()}`, done: false }].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))); setDraft({ title: "", date: today, time: "19:00", category: "その他" }); setShow(false); toast.success("予定を追加しました"); };
-  // Which items actually need attention right now, so it isn't the same
-  // plain purple dot whether something is due today or three months out
-  // (the home screen's "注目" panel already flags this, but the schedule
-  // itself — where the person is actually looking at every upcoming item —
-  // didn't show it at all).
+function ScheduleScreen({ schedule, setSchedule, companies, onNavigate }: { schedule: ScheduleItem[]; setSchedule: Dispatch<SetStateAction<ScheduleItem[]>>; companies: Company[]; onNavigate: (s: Screen) => void }) {
+  const [show, setShow] = useState(false);
+  const emptyDraft = { title: "", date: today, time: "19:00", category: "その他", companyId: null as string | null };
+  const [draft, setDraft] = useState(emptyDraft);
+  // 企業フィルタ: "all" = 全企業, "none" = 企業を指定していない予定, それ以外 = 企業ID
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
+  const [colorPanel, setColorPanel] = useState(false);
+  const [categoryColors, setCategoryColors] = usePersisted<ScheduleCategoryColor[]>("cc_schedule_category_colors", []);
+  const colorOf = (name: string) => categoryColors.find((c) => c.name === name)?.color;
+  const setCategoryColor = (name: string, color: CardColor | null) => { const n = name.trim(); if (!n) return; setCategoryColors((cur) => { const rest = cur.filter((c) => c.name !== n); return color ? [...rest, { name: n, color }] : rest; }); };
+  // 既にある予定のカテゴリから選べるようにする（面接カードのカテゴリ選択と同じ作り）
+  const categories = Array.from(new Set(["その他", ...schedule.map((i) => i.category).filter(Boolean)]));
+  const companyName = (id?: string | null) => companies.find((c) => c.id === id)?.name;
+  const add = () => {
+    if (!draft.title) return toast.error("予定名を入力してください");
+    if (!draft.category.trim()) return toast.error("カテゴリを入力してください");
+    setSchedule((c) => [...c, { ...draft, category: draft.category.trim(), id: `task-${Date.now()}`, done: false }].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)));
+    setDraft({ ...emptyDraft, companyId: companyFilter !== "all" && companyFilter !== "none" ? companyFilter : null }); setShow(false); toast.success("予定を追加しました");
+  };
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const urgency = (item: ScheduleItem) => item.date < today ? "overdue" : (item.date === today || item.date === tomorrow) ? "soon" : "";
-  return <div className="screen"><Header title="就活スケジュール" eyebrow="スケジュール" onMenu={() => onNavigate("settings")} /><section className="schedule-hero"><div><p className="eyebrow light">前進あるのみ</p><h2>締切から逆算して、<br />今日やることを決める。</h2></div><CalendarDays size={48} /></section><div className="section-heading"><div><p className="eyebrow">タイムライン</p><h2>やることリスト</h2></div><button className="primary-button" onClick={() => setShow((v) => !v)}><Plus size={17} />予定追加</button></div>{show && <div className="inline-form schedule-form"><div className="form-grid"><label className="wide">予定名<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="例：一次面接の準備" /></label><label>日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label><label>時間<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label><label className="wide">カテゴリ<input value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} /></label></div><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}<div className="timeline">{schedule.map((item) => <div className={`timeline-item ${item.done ? "done" : urgency(item)}`} key={item.id}><button className="check-circle" onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main"><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><span className="category-pill">{item.category}</span></div><button className="delete-plain" onClick={() => setSchedule((c) => c.filter((x) => x.id !== item.id))}><Trash2 size={16} /></button></div>)}</div></div>; }
+  const usedCompanyIds = new Set(schedule.map((i) => i.companyId).filter((x): x is string => !!x && !!companyName(x)));
+  const filterCompanies = companies.filter((c) => usedCompanyIds.has(c.id));
+  const hasNoCompany = schedule.some((i) => !i.companyId || !companyName(i.companyId));
+  const visible = schedule.filter((i) => companyFilter === "all" ? true : companyFilter === "none" ? (!i.companyId || !companyName(i.companyId)) : i.companyId === companyFilter);
+  const openForm = () => { if (!show) setDraft((d) => ({ ...d, companyId: companyFilter !== "all" && companyFilter !== "none" ? companyFilter : d.companyId })); setShow((v) => !v); };
+  return <div className="screen"><Header title="就活スケジュール" eyebrow="スケジュール" onMenu={() => onNavigate("settings")} /><section className="schedule-hero"><div><p className="eyebrow light">前進あるのみ</p><h2>締切から逆算して、<br />今日やることを決める。</h2></div><CalendarDays size={48} /></section>
+    <div className="section-heading"><div><p className="eyebrow">タイムライン</p><h2>やることリスト</h2></div><button className="primary-button" onClick={openForm}><Plus size={17} />予定追加</button></div>
+    {show && <div className="inline-form schedule-form"><div className="form-grid">
+      <label className="wide">予定名<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="例：一次面接の準備" /></label>
+      <label>日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
+      <label>時間<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label>
+      <label className="wide">企業（任意）<select value={draft.companyId ?? ""} onChange={(e) => setDraft({ ...draft, companyId: e.target.value || null })}><option value="">指定しない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      <label className="wide">カテゴリ<CategoryPicker value={draft.category} categories={categories} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label>
+      <div className="wide schedule-color-field"><span>カテゴリの色{draft.category.trim() ? `（${draft.category.trim()}）` : ""}</span><div className="color-swatch-row">{CARD_COLORS.map((c) => <button type="button" key={c} className={`color-swatch color-swatch-${c}`} aria-label={CARD_COLOR_LABEL[c]} aria-pressed={colorOf(draft.category.trim()) === c} disabled={!draft.category.trim()} onClick={() => setCategoryColor(draft.category, colorOf(draft.category.trim()) === c ? null : c)}>{colorOf(draft.category.trim()) === c && <Check size={13} />}</button>)}</div></div>
+    </div><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
+    <div className="chip-row schedule-company-filter">
+      <button className={`chip ${companyFilter === "all" ? "selected" : ""}`} onClick={() => setCompanyFilter("all")}>全企業</button>
+      {filterCompanies.map((c) => <button key={c.id} className={`chip ${companyFilter === c.id ? "selected" : ""}`} onClick={() => setCompanyFilter(c.id)}>{c.name}</button>)}
+      {hasNoCompany && filterCompanies.length > 0 && <button className={`chip ${companyFilter === "none" ? "selected" : ""}`} onClick={() => setCompanyFilter("none")}>企業指定なし</button>}
+    </div>
+    <div className="card-filter"><span>{visible.length}件</span><button className="text-button" onClick={() => setColorPanel((v) => !v)}>カテゴリの色を設定</button></div>
+    {colorPanel && <div className="inline-form schedule-color-panel">{categories.map((name) => <div className="schedule-color-row" key={name}><span className={`category-pill ${colorOf(name) ? `cat-color-${colorOf(name)}` : ""}`}>{name}</span><div className="color-swatch-row">{CARD_COLORS.map((c) => <button type="button" key={c} className={`color-swatch color-swatch-${c}`} aria-label={`${name}を${CARD_COLOR_LABEL[c]}にする`} aria-pressed={colorOf(name) === c} onClick={() => setCategoryColor(name, colorOf(name) === c ? null : c)}>{colorOf(name) === c && <Check size={13} />}</button>)}</div></div>)}</div>}
+    <div className="timeline">{visible.map((item) => { const col = colorOf(item.category); const cn = companyName(item.companyId); return <div className={`timeline-item ${item.done ? "done" : urgency(item)} ${col ? `cat-color-${col}` : ""}`} key={item.id}><button className="check-circle" onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main"><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><div className="timeline-tags"><span className={`category-pill ${col ? `cat-color-${col}` : ""}`}>{item.category}</span>{cn && <span className="category-pill company-pill">{cn}</span>}</div></div><button className="delete-plain" onClick={() => setSchedule((c) => c.filter((x) => x.id !== item.id))}><Trash2 size={16} /></button></div>; })}{!visible.length && <p className="child-empty-hint">この条件の予定はありません。</p>}</div></div>; }
 
 function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { onNavigate: (s: Screen) => void; onUpdateApp: () => void; fontScale: FontScale; setFontScale: Dispatch<SetStateAction<FontScale>> }) {
   const [status, setStatus] = useState("");
@@ -1445,6 +1482,7 @@ function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { 
     cardCategories: load<string[]>("cc_card_categories", Array.from(new Set(starterCards.map((card) => card.category)))),
     gdTips: load<GdTip[]>("cc_gd_tips", []),
     gdThemes: load<GdTheme[]>("cc_gd_themes", []),
+    scheduleCategoryColors: load<ScheduleCategoryColor[]>("cc_schedule_category_colors", []),
     exportedAt: new Date().toISOString(),
     formatVersion: 1,
   });
@@ -1902,5 +1940,5 @@ export default function Home() {
     }).catch(() => toast.error("更新の確認に失敗しました。通信状態を確認してください"));
   };
 
-  return <div className="app-shell" style={{ zoom: FONT_SCALE_VALUE[fontScale] } as React.CSSProperties}><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} cards={cards} onNavigate={setScreen} />}{screen === "interview" && <InterviewHub cards={cards} setCards={setCards} companies={companies} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} fontScale={fontScale} setFontScale={setFontScale} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
+  return <div className="app-shell" style={{ zoom: FONT_SCALE_VALUE[fontScale] } as React.CSSProperties}><aside className="side-rail"><Logo /><div className="rail-label">WORKSPACE</div>{([{ id: "home", label: "ホーム", Icon: HomeIcon }, { id: "research", label: "企業研究", Icon: BriefcaseBusiness }, { id: "interview", label: "面接カード", Icon: BookOpen }, { id: "schedule", label: "スケジュール", Icon: CalendarDays }, { id: "settings", label: "設定", Icon: Settings }] as Array<{ id: Screen; label: string; Icon: typeof HomeIcon }>).map(({ id, label, Icon }) => <button key={id} className={`rail-button ${screen === id ? "active" : ""}`} onClick={() => setScreen(id)}><Icon size={18} />{label}</button>)}<div className="rail-spacer" /><div className="rail-footer"><div className="avatar">自</div><div><strong>My workspace</strong><small>この端末に自動保存</small></div></div></aside><main className="main-content">{screen === "home" && <HomeScreen companies={companies} schedule={schedule} onNavigate={setScreen} />}{screen === "research" && <ResearchScreen companies={companies} setCompanies={setCompanies} cards={cards} onNavigate={setScreen} />}{screen === "interview" && <InterviewHub cards={cards} setCards={setCards} companies={companies} onNavigate={setScreen} />}{screen === "schedule" && <ScheduleScreen schedule={schedule} setSchedule={setSchedule} companies={companies} onNavigate={setScreen} />}{screen === "settings" && <SettingsScreen onNavigate={setScreen} onUpdateApp={updateApp} fontScale={fontScale} setFontScale={setFontScale} />}</main><BottomNav screen={screen} onChange={setScreen} /></div>;
 }

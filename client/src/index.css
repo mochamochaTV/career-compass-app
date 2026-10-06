@@ -780,3 +780,11 @@ body { background: var(--background); color: var(--foreground); }
 .schedule-color-panel { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
 .schedule-color-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .schedule-color-row .category-pill { margin-top: 0; font-size: 11px; }
+.archive-toggle { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 22px; padding: 12px 14px; font-size: 13px; font-weight: 700; color: #4b4b63; background: #fff; border: 1px solid #ececf3; border-radius: 12px; }
+.archive-toggle svg { transition: transform .15s; transform: rotate(-90deg); }
+.archive-toggle svg.open { transform: rotate(0); }
+.archive-timeline { margin-top: 14px; opacity: .85; }
+.category-pill.overdue-pill { color: #c25454; background: #fdecec; }
+.timeline-item .delete-plain + .delete-plain { margin-left: -4px; }
+.dark .archive-toggle { color: #cfcfe0; background: #1d1d2a; border-color: #34344a; }
+.dark .category-pill.overdue-pill { color: #ff9c9c; background: #52272c; }

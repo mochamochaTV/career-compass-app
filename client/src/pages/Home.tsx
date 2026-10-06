@@ -1432,6 +1432,8 @@ function ScheduleScreen({ schedule, setSchedule, companies, onNavigate }: { sche
   // 企業フィルタ: "all" = 全企業, "none" = 企業を指定していない予定, それ以外 = 企業ID
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [colorPanel, setColorPanel] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showArchive, setShowArchive] = useState(false);
   const [categoryColors, setCategoryColors] = usePersisted<ScheduleCategoryColor[]>("cc_schedule_category_colors", []);
   const colorOf = (name: string) => categoryColors.find((c) => c.name === name)?.color;
   const setCategoryColor = (name: string, color: CardColor | null) => { const n = name.trim(); if (!n) return; setCategoryColors((cur) => { const rest = cur.filter((c) => c.name !== n); return color ? [...rest, { name: n, color }] : rest; }); };
@@ -1441,8 +1443,10 @@ function ScheduleScreen({ schedule, setSchedule, companies, onNavigate }: { sche
   const add = () => {
     if (!draft.title) return toast.error("予定名を入力してください");
     if (!draft.category.trim()) return toast.error("カテゴリを入力してください");
-    setSchedule((c) => [...c, { ...draft, category: draft.category.trim(), id: `task-${Date.now()}`, done: false }].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)));
-    setDraft({ ...emptyDraft, companyId: companyFilter !== "all" && companyFilter !== "none" ? companyFilter : null }); setShow(false); toast.success("予定を追加しました");
+    const byTime = (a: ScheduleItem, b: ScheduleItem) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`);
+    if (editingId) setSchedule((c) => c.map((x) => x.id === editingId ? { ...x, ...draft, category: draft.category.trim() } : x).sort(byTime));
+    else setSchedule((c) => [...c, { ...draft, category: draft.category.trim(), id: `task-${Date.now()}`, done: false }].sort(byTime));
+    setDraft({ ...emptyDraft, companyId: companyFilter !== "all" && companyFilter !== "none" ? companyFilter : null }); setShow(false); toast.success(editingId ? "予定を更新しました" : "予定を追加しました"); setEditingId(null);
   };
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const urgency = (item: ScheduleItem) => item.date < today ? "overdue" : (item.date === today || item.date === tomorrow) ? "soon" : "";
@@ -1450,7 +1454,13 @@ function ScheduleScreen({ schedule, setSchedule, companies, onNavigate }: { sche
   const filterCompanies = companies.filter((c) => usedCompanyIds.has(c.id));
   const hasNoCompany = schedule.some((i) => !i.companyId || !companyName(i.companyId));
   const visible = schedule.filter((i) => companyFilter === "all" ? true : companyFilter === "none" ? (!i.companyId || !companyName(i.companyId)) : i.companyId === companyFilter);
-  const openForm = () => { if (!show) setDraft((d) => ({ ...d, companyId: companyFilter !== "all" && companyFilter !== "none" ? companyFilter : d.companyId })); setShow((v) => !v); };
+  const openForm = () => { if (show) { setShow(false); setEditingId(null); return; } setEditingId(null); setDraft({ ...emptyDraft, companyId: companyFilter !== "all" && companyFilter !== "none" ? companyFilter : null }); setShow(true); };
+  const startEdit = (item: ScheduleItem) => { setEditingId(item.id); setDraft({ title: item.title, date: item.date, time: item.time, category: item.category, companyId: item.companyId && companyName(item.companyId) ? item.companyId : null }); setShow(true); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  // 完了済み（チェック済み、または日付を過ぎた予定）は消さずにここへまとめる
+  const isArchived = (i: ScheduleItem) => i.done || i.date < today;
+  const active = visible.filter((i) => !isArchived(i));
+  const archived = visible.filter(isArchived).sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`));
+  const renderItem = (item: ScheduleItem) => { const col = colorOf(item.category); const cn = companyName(item.companyId); return <div className={`timeline-item ${item.done ? "done" : urgency(item)} ${col ? `cat-color-${col}` : ""}`} key={item.id}><button className="check-circle" aria-label={item.done ? "未完了に戻す" : "完了にする"} onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main"><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><div className="timeline-tags"><span className={`category-pill ${col ? `cat-color-${col}` : ""}`}>{item.category}</span>{cn && <span className="category-pill company-pill">{cn}</span>}{!item.done && item.date < today && <span className="category-pill overdue-pill">期限切れ</span>}</div></div><button className="delete-plain" aria-label="予定を編集" onClick={() => startEdit(item)}><Pencil size={16} /></button><button className="delete-plain" aria-label="予定を削除" onClick={() => { if (window.confirm(`「${item.title}」を削除しますか？`)) setSchedule((c) => c.filter((x) => x.id !== item.id)); }}><Trash2 size={16} /></button></div>; };
   return <div className="screen"><Header title="就活スケジュール" eyebrow="スケジュール" onMenu={() => onNavigate("settings")} /><section className="schedule-hero"><div><p className="eyebrow light">前進あるのみ</p><h2>締切から逆算して、<br />今日やることを決める。</h2></div><CalendarDays size={48} /></section>
     <div className="section-heading"><div><p className="eyebrow">タイムライン</p><h2>やることリスト</h2></div><button className="primary-button" onClick={openForm}><Plus size={17} />予定追加</button></div>
     {show && <div className="inline-form schedule-form"><div className="form-grid">
@@ -1460,15 +1470,18 @@ function ScheduleScreen({ schedule, setSchedule, companies, onNavigate }: { sche
       <label className="wide">企業（任意）<select value={draft.companyId ?? ""} onChange={(e) => setDraft({ ...draft, companyId: e.target.value || null })}><option value="">指定しない</option>{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
       <label className="wide">カテゴリ<CategoryPicker value={draft.category} categories={categories} onChange={(value) => setDraft({ ...draft, category: value })} resetKey={show ? "open" : "closed"} /></label>
       <div className="wide schedule-color-field"><span>カテゴリの色{draft.category.trim() ? `（${draft.category.trim()}）` : ""}</span><div className="color-swatch-row">{CARD_COLORS.map((c) => <button type="button" key={c} className={`color-swatch color-swatch-${c}`} aria-label={CARD_COLOR_LABEL[c]} aria-pressed={colorOf(draft.category.trim()) === c} disabled={!draft.category.trim()} onClick={() => setCategoryColor(draft.category, colorOf(draft.category.trim()) === c ? null : c)}>{colorOf(draft.category.trim()) === c && <Check size={13} />}</button>)}</div></div>
-    </div><button className="primary-button" onClick={add}><Check size={16} />保存する</button></div>}
+    </div><button className="primary-button" onClick={add}><Check size={16} />{editingId ? "更新する" : "保存する"}</button></div>}
     <div className="chip-row schedule-company-filter">
       <button className={`chip ${companyFilter === "all" ? "selected" : ""}`} onClick={() => setCompanyFilter("all")}>全企業</button>
       {filterCompanies.map((c) => <button key={c.id} className={`chip ${companyFilter === c.id ? "selected" : ""}`} onClick={() => setCompanyFilter(c.id)}>{c.name}</button>)}
       {hasNoCompany && filterCompanies.length > 0 && <button className={`chip ${companyFilter === "none" ? "selected" : ""}`} onClick={() => setCompanyFilter("none")}>企業指定なし</button>}
     </div>
-    <div className="card-filter"><span>{visible.length}件</span><button className="text-button" onClick={() => setColorPanel((v) => !v)}>カテゴリの色を設定</button></div>
+    <div className="card-filter"><span>{active.length}件</span><button className="text-button" onClick={() => setColorPanel((v) => !v)}>カテゴリの色を設定</button></div>
     {colorPanel && <div className="inline-form schedule-color-panel">{categories.map((name) => <div className="schedule-color-row" key={name}><span className={`category-pill ${colorOf(name) ? `cat-color-${colorOf(name)}` : ""}`}>{name}</span><div className="color-swatch-row">{CARD_COLORS.map((c) => <button type="button" key={c} className={`color-swatch color-swatch-${c}`} aria-label={`${name}を${CARD_COLOR_LABEL[c]}にする`} aria-pressed={colorOf(name) === c} onClick={() => setCategoryColor(name, colorOf(name) === c ? null : c)}>{colorOf(name) === c && <Check size={13} />}</button>)}</div></div>)}</div>}
-    <div className="timeline">{visible.map((item) => { const col = colorOf(item.category); const cn = companyName(item.companyId); return <div className={`timeline-item ${item.done ? "done" : urgency(item)} ${col ? `cat-color-${col}` : ""}`} key={item.id}><button className="check-circle" onClick={() => setSchedule((c) => c.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>{item.done && <Check size={14} />}</button><div className="timeline-main"><div className="timeline-top"><strong>{item.title}</strong><span>{item.date} · {item.time}</span></div><div className="timeline-tags"><span className={`category-pill ${col ? `cat-color-${col}` : ""}`}>{item.category}</span>{cn && <span className="category-pill company-pill">{cn}</span>}</div></div><button className="delete-plain" onClick={() => setSchedule((c) => c.filter((x) => x.id !== item.id))}><Trash2 size={16} /></button></div>; })}{!visible.length && <p className="child-empty-hint">この条件の予定はありません。</p>}</div></div>; }
+    <div className="timeline">{active.map(renderItem)}{!active.length && <p className="child-empty-hint">これからの予定はありません。</p>}</div>
+    <button className="archive-toggle" aria-expanded={showArchive} onClick={() => setShowArchive((v) => !v)}><ChevronDown size={16} className={showArchive ? "open" : ""} />完了済み・過去の予定 <span className="count-badge">{archived.length}</span></button>
+    {showArchive && <div className="timeline archive-timeline">{archived.map(renderItem)}{!archived.length && <p className="child-empty-hint">完了した予定や過ぎた予定は、ここに残ります。</p>}</div>}
+  </div>; }
 
 function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { onNavigate: (s: Screen) => void; onUpdateApp: () => void; fontScale: FontScale; setFontScale: Dispatch<SetStateAction<FontScale>> }) {
   const [status, setStatus] = useState("");

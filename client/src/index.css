@@ -788,3 +788,6 @@ body { background: var(--background); color: var(--foreground); }
 .timeline-item .delete-plain + .delete-plain { margin-left: -4px; }
 .dark .archive-toggle { color: #cfcfe0; background: #1d1d2a; border-color: #34344a; }
 .dark .category-pill.overdue-pill { color: #ff9c9c; background: #52272c; }
+/* カテゴリ色を設定した予定は、期限が近い/超過でも縁をカテゴリ色にする（期限は日付の色とタグで示す） */
+.timeline-item[class*="cat-color-"] .timeline-main, .dark .timeline-item[class*="cat-color-"] .timeline-main { border-color: color-mix(in srgb, var(--cat) 55%, transparent); box-shadow: inset 4px 0 0 var(--cat); background: color-mix(in srgb, var(--cat) 6%, #fff); }
+.dark .timeline-item[class*="cat-color-"] .timeline-main { background: color-mix(in srgb, var(--cat) 14%, #1d1d2a); border-color: color-mix(in srgb, var(--cat) 60%, transparent); }

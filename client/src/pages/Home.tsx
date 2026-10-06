@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { createBackupZip, parseBackupBytes } from "@/lib/backup";
 import { encodeShare, type SharedCompanySnapshot } from "@/lib/share";
 import { BASE_PATH } from "@/lib/basePath";
+import { DEFAULT_SYNC_PATH, runSync, SYNC_FIELDS, SyncError, type SyncConfig, type SyncData, type SyncMode } from "@/lib/sync";
 import { openKanpeWindow } from "@/lib/kanpe";
 import { useTheme } from "@/contexts/ThemeContext";
 
@@ -206,7 +207,71 @@ const BACKUP_FIELD_KEYS: Record<keyof CloudPayload, string> = {
 };
 
 function load<T>(key: string, fallback: T): T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; } }
-function usePersisted<T>(key: string, initial: T) { const [value, setValue] = useState<T>(() => load(key, initial)); useEffect(() => localStorage.setItem(key, JSON.stringify(value)), [key, value]); return [value, setValue] as const; }
+function usePersisted<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(() => load(key, initial));
+  useEffect(() => localStorage.setItem(key, JSON.stringify(value)), [key, value]);
+  // 同期で他端末のデータを取り込んだとき、再読み込みせずに画面の状態を差し替える。
+  useEffect(() => {
+    const onReplaced = () => {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return;
+      try { const next = JSON.parse(raw) as T; setValue((prev) => (JSON.stringify(prev) === raw ? prev : next)); } catch { /* ignore */ }
+    };
+    window.addEventListener("cc-data-replaced", onReplaced);
+    return () => window.removeEventListener("cc-data-replaced", onReplaced);
+  }, [key]);
+  return [value, setValue] as const;
+}
+
+// ===== 端末間同期（GitHub非公開リポジトリ）=====
+const SYNC_CONFIG_KEY = "cc_sync_config";
+const SYNC_BASE_KEY = "cc_sync_base";
+const SYNC_STATUS_KEY = "cc_sync_status";
+type SyncStatus = { at: string; ok: boolean; message: string };
+function getSyncConfig(): SyncConfig | null { const c = load<SyncConfig | null>(SYNC_CONFIG_KEY, null); return c && c.owner && c.repo && c.token ? { ...c, path: c.path || DEFAULT_SYNC_PATH } : null; }
+function getSyncStatus(): SyncStatus | null { return load<SyncStatus | null>(SYNC_STATUS_KEY, null); }
+function collectLocalData() {
+  return {
+    companies: load<Company[]>("cc_companies", starterCompanies),
+    cards: load<InterviewCard[]>("cc_cards", starterCards),
+    schedule: load<ScheduleItem[]>("cc_schedule", starterSchedule),
+    pitchTemplates: load<PitchTemplate[]>("cc_pitch_templates", []),
+    reverseQuestions: load<ReverseQuestion[]>("cc_reverse_questions", []),
+    cardCategories: load<string[]>("cc_card_categories", Array.from(new Set(starterCards.map((card) => card.category)))),
+    gdTips: load<GdTip[]>("cc_gd_tips", []),
+    gdThemes: load<GdTheme[]>("cc_gd_themes", []),
+    scheduleCategoryColors: load<ScheduleCategoryColor[]>("cc_schedule_category_colors", []),
+  };
+}
+let syncInFlight = false;
+async function syncNow(mode: SyncMode = "merge"): Promise<SyncStatus> {
+  const finish = (ok: boolean, message: string) => {
+    const status: SyncStatus = { at: new Date().toISOString(), ok, message };
+    try { localStorage.setItem(SYNC_STATUS_KEY, JSON.stringify(status)); } catch { /* ignore */ }
+    window.dispatchEvent(new Event("cc-sync-status"));
+    return status;
+  };
+  const cfg = getSyncConfig();
+  if (!cfg) return finish(false, "同期の設定がありません");
+  if (syncInFlight) return finish(false, "同期中です。少し待ってからお試しください");
+  const base = load<SyncData | null>(SYNC_BASE_KEY, null);
+  if (mode === "merge" && !base) return finish(false, "この端末ではまだ初回の同期をしていません。「クラウドに保存」か「クラウドから取り込む」を選んでください");
+  syncInFlight = true;
+  try {
+    const local = collectLocalData() as SyncData;
+    const res = await runSync(cfg, local, base, mode);
+    if (res.changedLocal) {
+      // 万一に備えて、取り込む直前の内容を端末内に退避しておく
+      try { localStorage.setItem("cc_pre_sync_backup", JSON.stringify({ at: new Date().toISOString(), data: local })); } catch { /* ignore */ }
+      SYNC_FIELDS.forEach((f) => localStorage.setItem(BACKUP_FIELD_KEYS[f], JSON.stringify(res.merged[f] ?? [])));
+      window.dispatchEvent(new Event("cc-data-replaced"));
+    }
+    localStorage.setItem(SYNC_BASE_KEY, JSON.stringify(res.merged));
+    return finish(true, res.changedLocal ? (res.pushed ? "他の端末の変更を取り込み、この端末の変更も保存しました" : "他の端末の変更を取り込みました") : (res.pushed ? "この端末の変更をクラウドに保存しました" : "すでに最新です"));
+  } catch (e) {
+    return finish(false, e instanceof SyncError ? e.message : "同期に失敗しました。時間をおいてもう一度お試しください");
+  } finally { syncInFlight = false; }
+}
 function money(value: number | null) { return value ? `${value.toLocaleString()}万円` : "未入力"; }
 // Swaps an item with its neighbor one slot up or down — the shared step
 // behind every ↑↓ reorder button in this file (company list, ranking board,
@@ -1579,19 +1644,64 @@ function ScheduleDetail({ item, companyName, colorKey, onClose, onSave, onToggle
   </div>;
 }
 
+function SyncSettingsCard() {
+  const saved = getSyncConfig();
+  const [owner, setOwner] = useState(saved?.owner ?? "");
+  const [repo, setRepo] = useState(saved?.repo ?? "");
+  const [token, setToken] = useState(saved?.token ?? "");
+  const [path, setPath] = useState(saved?.path ?? DEFAULT_SYNC_PATH);
+  const [configured, setConfigured] = useState(!!saved);
+  const [hasBase, setHasBase] = useState(() => load<SyncData | null>(SYNC_BASE_KEY, null) !== null);
+  const [status, setStatus] = useState<SyncStatus | null>(getSyncStatus());
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { const h = () => { setStatus(getSyncStatus()); setHasBase(load<SyncData | null>(SYNC_BASE_KEY, null) !== null); }; window.addEventListener("cc-sync-status", h); return () => window.removeEventListener("cc-sync-status", h); }, []);
+  const saveConfig = () => {
+    if (!owner.trim() || !repo.trim() || !token.trim()) return toast.error("ユーザー名・リポジトリ名・トークンを入力してください");
+    localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify({ owner: owner.trim(), repo: repo.trim(), token: token.trim(), path: path.trim() || DEFAULT_SYNC_PATH }));
+    setConfigured(true); toast.success("同期の設定を保存しました。次に、初回の同期を選んでください");
+  };
+  const run = async (mode: SyncMode) => {
+    if (mode === "download" && !window.confirm("クラウドのデータをこの端末に取り込みます。この端末にある現在のデータはクラウドの内容に置き換わります（直前の内容は端末内に退避されます）。よろしいですか？")) return;
+    setBusy(true); const r = await syncNow(mode); setBusy(false); setStatus(r);
+    r.ok ? toast.success(r.message) : toast.error(r.message);
+  };
+  const clearConfig = () => {
+    if (!window.confirm("この端末の同期設定（トークンを含む）を削除します。クラウド上のデータや、この端末のデータは消えません。")) return;
+    [SYNC_CONFIG_KEY, SYNC_BASE_KEY, SYNC_STATUS_KEY].forEach((k) => localStorage.removeItem(k));
+    setConfigured(false); setHasBase(false); setStatus(null); setToken("");
+  };
+  return <section className="settings-card sync-card"><div className="settings-icon purple"><Link2 size={20} /></div><div>
+    <h3>端末間の同期（PC・iPhone）</h3>
+    <p>自分のGitHubの非公開リポジトリを使って、データを端末どうしで同期します。設定は端末ごとに1回だけです。</p>
+    <details className="sync-howto"><summary>設定のしかた（初回のみ）</summary><ol>
+      <li>GitHubで<strong>非公開（Private）</strong>のリポジトリを新しく作る（例：<code>career-compass-data</code>）。</li>
+      <li>GitHubの「Settings → Developer settings → Fine-grained personal access tokens」でトークンを作る。対象リポジトリはその1つだけ、「Repository permissions → Contents」を<strong>Read and write</strong>にする。</li>
+      <li>下の欄にユーザー名・リポジトリ名・トークンを入れて「設定を保存」。</li>
+      <li>1台目は「クラウドに保存」、2台目以降は「クラウドから取り込む」を押す。</li>
+    </ol><p className="sync-note">トークンはこの端末のブラウザ内にだけ保存され、バックアップには含まれません。公開リポジトリには同期しません。</p></details>
+    <div className="form-grid sync-form">
+      <label>GitHubのユーザー名<input value={owner} onChange={(e) => setOwner(e.target.value)} autoCapitalize="off" autoCorrect="off" placeholder="例：mochamochaTV" /></label>
+      <label>リポジトリ名<input value={repo} onChange={(e) => setRepo(e.target.value)} autoCapitalize="off" autoCorrect="off" placeholder="例：career-compass-data" /></label>
+      <label className="wide">アクセストークン<input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" autoCapitalize="off" placeholder="github_pat_..." /></label>
+    </div>
+    <div className="settings-actions"><button className="secondary-button" onClick={saveConfig}><Check size={16} />設定を保存</button>{configured && <button className="secondary-button" onClick={clearConfig}><Trash2 size={16} />設定を削除</button>}</div>
+    {configured && <div className="sync-actions">
+      {hasBase ? <button className="primary-button" disabled={busy} onClick={() => run("merge")}><RefreshCw size={16} />{busy ? "同期中…" : "今すぐ同期"}</button> : <>
+        <p className="sync-note">この端末ではまだ初回の同期をしていません。どちらかを選んでください。</p>
+        <button className="primary-button" disabled={busy} onClick={() => run("upload")}><FileUp size={16} />クラウドに保存（1台目）</button>
+        <button className="secondary-button" disabled={busy} onClick={() => run("download")}><Download size={16} />クラウドから取り込む（2台目以降）</button>
+      </>}
+      {hasBase && <small className="sync-note">アプリを開いたときと、データを編集したあとに自動でも同期します。</small>}
+    </div>}
+    {status && <small className={`status-message ${status.ok ? "" : "sync-error"}`}>{new Date(status.at).toLocaleString("ja-JP")}：{status.message}</small>}
+  </div></section>;
+}
+
 function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { onNavigate: (s: Screen) => void; onUpdateApp: () => void; fontScale: FontScale; setFontScale: Dispatch<SetStateAction<FontScale>> }) {
   const [status, setStatus] = useState("");
   const { theme, toggleTheme } = useTheme();
   const getData = () => ({
-    companies: load("cc_companies", starterCompanies),
-    cards: load("cc_cards", starterCards),
-    schedule: load("cc_schedule", starterSchedule),
-    pitchTemplates: load<PitchTemplate[]>("cc_pitch_templates", []),
-    reverseQuestions: load<ReverseQuestion[]>("cc_reverse_questions", []),
-    cardCategories: load<string[]>("cc_card_categories", Array.from(new Set(starterCards.map((card) => card.category)))),
-    gdTips: load<GdTip[]>("cc_gd_tips", []),
-    gdThemes: load<GdTheme[]>("cc_gd_themes", []),
-    scheduleCategoryColors: load<ScheduleCategoryColor[]>("cc_schedule_category_colors", []),
+    ...collectLocalData(),
     exportedAt: new Date().toISOString(),
     formatVersion: 1,
   });
@@ -1603,7 +1713,7 @@ function SettingsScreen({ onNavigate, onUpdateApp, fontScale, setFontScale }: { 
     purple as the two save buttons — it overwrites whatever is already on
     this device, which is a meaningfully different, less-reversible action
     than exporting a copy. */}
-<div className="settings-actions"><button className="secondary-button" onClick={backupZip}><FileDown size={16} />ZIPで保存</button><button className="secondary-button" onClick={backup}>JSONで保存</button><label className="secondary-button restore-button"><FileUp size={16} />JSON / ZIP復元<input type="file" accept="application/json,.json,application/zip,.zip" onChange={restore} hidden /></label></div>{status && <small className="status-message">{status}</small>}</div></section><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>端末に自動保存中</h3><p>企業・面接カード・予定は、このブラウザのローカル領域に自動保存されます。別の端末で使うときは上のバックアップ機能でデータを移してください。</p></div></section><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>PWAを最新バージョンに更新</h3><p>設定画面からいつでも新しいアプリ本体を確認できます。更新後は自動的に再読み込みします。</p><button className="secondary-button" onClick={onUpdateApp}><RefreshCw size={16} />今すぐ更新を確認</button></div></section><button className="outline-wide" onClick={() => onNavigate("home")}><HomeIcon size={17} />ホームに戻る</button></div>;
+<div className="settings-actions"><button className="secondary-button" onClick={backupZip}><FileDown size={16} />ZIPで保存</button><button className="secondary-button" onClick={backup}>JSONで保存</button><label className="secondary-button restore-button"><FileUp size={16} />JSON / ZIP復元<input type="file" accept="application/json,.json,application/zip,.zip" onChange={restore} hidden /></label></div>{status && <small className="status-message">{status}</small>}</div></section><SyncSettingsCard /><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>端末に自動保存中</h3><p>企業・面接カード・予定は、このブラウザのローカル領域に自動保存されます。端末どうしで共有するときは、上の「端末間の同期」を設定するか、バックアップ機能でデータを移してください。</p></div></section><section className="settings-card"><div className="settings-icon green"><RefreshCw size={20} /></div><div><h3>PWAを最新バージョンに更新</h3><p>設定画面からいつでも新しいアプリ本体を確認できます。更新後は自動的に再読み込みします。</p><button className="secondary-button" onClick={onUpdateApp}><RefreshCw size={16} />今すぐ更新を確認</button></div></section><button className="outline-wide" onClick={() => onNavigate("home")}><HomeIcon size={17} />ホームに戻る</button></div>;
 }
 // Sits in front of the card screen: pick "面接カード" to manage cards as
 // before, or "問題" to practice one card at a time in a random order. Which
@@ -1993,6 +2103,22 @@ export default function Home() {
   const [cards, setCards] = usePersisted<InterviewCard[]>("cc_cards", starterCards);
   const [schedule, setSchedule] = usePersisted<ScheduleItem[]>("cc_schedule", starterSchedule);
   const [fontScale, setFontScale] = usePersisted<FontScale>("cc_font_scale", "standard");
+  // 同期の自動実行：起動時、アプリに戻ってきたとき、編集の少しあと。
+  const lastAutoSync = useRef(0);
+  const autoSync = () => { if (!getSyncConfig() || load<SyncData | null>(SYNC_BASE_KEY, null) === null) return; lastAutoSync.current = Date.now(); void syncNow("merge"); };
+  useEffect(() => {
+    autoSync();
+    const onVisible = () => { if (document.visibilityState === "visible" && Date.now() - lastAutoSync.current > 5 * 60 * 1000) autoSync(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+  const firstDataRender = useRef(true);
+  useEffect(() => {
+    if (firstDataRender.current) { firstDataRender.current = false; return; }
+    if (!getSyncConfig()) return;
+    const t = window.setTimeout(() => { if (Date.now() - lastAutoSync.current > 10 * 1000) autoSync(); }, 15000);
+    return () => window.clearTimeout(t);
+  }, [companies, cards, schedule]);
   const [serviceWorkerRegistration, setServiceWorkerRegistration] = useState<ServiceWorkerRegistration | null>(null);
 
   useEffect(() => {

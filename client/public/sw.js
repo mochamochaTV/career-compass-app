@@ -45,6 +45,9 @@ function cachePut(request, response) {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // 他サイト（GitHub API など）へのリクエストはキャッシュせず、そのまま通す。
+  // 同期のデータが古いまま返ってくるのを防ぐ。
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   const request = event.request;
   const isNavigation = request.mode === "navigate";
   const isAppAsset = /\.(?:js|css|html)$/.test(new URL(request.url).pathname);

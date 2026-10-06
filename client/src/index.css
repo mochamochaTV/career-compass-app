@@ -887,3 +887,15 @@ body { background: var(--background); color: var(--foreground); }
 .experience-entry-text{white-space:pre-wrap;margin:8px 0 4px;line-height:1.7;font-size:.9rem}
 .experience-entry-source{opacity:.7}
 .dark .experience-filter button,.dark .experience-kind-picker button,.dark .experience-form,.dark .experience-entry{border-color:rgba(255,255,255,.18)}
+
+/* 給与まとめ項目・業界の平均年収 */
+.pay-group{display:grid;gap:10px;padding:12px;border:1px solid var(--border,#e7e6f0);border-radius:12px}
+.pay-group-title{font-size:10px;font-weight:700;color:#77778b}
+.pay-group-numbers{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.industry-salary-card{margin:12px 0;padding:14px;border:1px solid #e8e7f2;border-radius:14px;background:#fff;display:grid;gap:8px}
+.industry-salary-card h3{margin:0;font-size:15px}.industry-salary-card p{margin:0;font-size:11px;color:#77778b}
+.industry-salary-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:10px;align-items:center;font-size:12px;font-weight:700}
+.industry-salary-row input{padding:9px 10px;border:1px solid #e7e6f0;border-radius:9px;background:#fbfbfe;color:#313147;font-size:16px}
+.dark .pay-group,.dark .industry-salary-card{border-color:rgba(255,255,255,.18);background:transparent}
+.dark .industry-salary-row input{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18);color:inherit}
+@media (max-width:420px){.pay-group-numbers{grid-template-columns:1fr}}

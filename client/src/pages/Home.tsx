@@ -72,30 +72,29 @@ const EXPERIENCE_KINDS: { key: ExperienceKind; label: string }[] = [
   { key: "selection", label: "選考体験談" }, { key: "other", label: "その他" },
 ];
 export type CompanyFieldKey =
-  | "industry" | "interest" | "interestScore" | "startingSalary" | "avgSalaryGraduate" | "location"
+  | "industry" | "interest" | "interestScore" | "pay" | "location"
   | "business" | "benefits" | "holidays" | "philosophy" | "person"
   | "strengthFit" | "notes" | "sources" | "tags"
   | "companyOverview" | "founded" | "capital" | "employeeCount" | "avgAge" | "programs"
-  | "payOvertimeSystem" | "workHoursHolidays" | "industryAvgSalary" | "revenue" | "customers"
+  | "workHoursHolidays" | "revenue" | "customers"
   | "competitiveEdge" | "outlook" | "recruitingInfo" | "annualHiringTrend";
 export const COMPANY_FIELD_LABELS: Record<CompanyFieldKey, string> = {
   industry: "業界", interest: "志望度（★評価）", interestScore: "志望度スコア",
-  startingSalary: "初任給", avgSalaryGraduate: "平均年収（学部卒）", location: "勤務地",
+  pay: "給与（初任給・平均年収・手当・残業代）", location: "勤務地",
   business: "事業内容", benefits: "福利厚生", holidays: "休日制度・年間休日・休暇制度",
   philosophy: "企業理念", person: "求める人物像",
   strengthFit: "自分の強みが生かせるか", notes: "自分のメモ",
   sources: "参考URL", tags: "タグ",
   companyOverview: "企業概要", founded: "設立", capital: "資本金", employeeCount: "社員数",
-  avgAge: "平均年齢", programs: "社内制度", payOvertimeSystem: "給与・諸手当＋残業代の制度",
-  workHoursHolidays: "勤務時間", industryAvgSalary: "業界の平均給与", revenue: "売上高",
+  avgAge: "平均年齢", programs: "社内制度",
+  workHoursHolidays: "勤務時間", revenue: "売上高",
   customers: "お客様は誰か", competitiveEdge: "同業内の強み・弱み", outlook: "将来性",
   recruitingInfo: "採用情報", annualHiringTrend: "例年の新卒採用人数や倍率",
 };
 export const DEFAULT_COMPANY_FIELD_ORDER: CompanyFieldKey[] = [
   "companyOverview", "philosophy", "founded", "capital", "industry", "employeeCount", "avgAge", "location",
-  "business", "customers", "competitiveEdge", "industryAvgSalary", "revenue",
-  "programs", "benefits", "payOvertimeSystem", "workHoursHolidays", "holidays",
-  "startingSalary", "avgSalaryGraduate",
+  "business", "customers", "competitiveEdge", "revenue",
+  "programs", "benefits", "pay", "workHoursHolidays", "holidays",
   "recruitingInfo", "annualHiringTrend",
   "person", "outlook",
   "interest", "interestScore", "strengthFit",
@@ -143,6 +142,8 @@ const QUIZ_RATING_OPTIONS: Array<{ key: QuizRatingFilter; label: string }> = [..
 const DEFAULT_QUIZ_SETTINGS: QuizSettings = { count: 10, ratings: QUIZ_RATING_OPTIONS.map((option) => option.key), weighted: false };
 export type ScheduleItem = { id: string; title: string; date: string; time: string; endTime?: string; location?: string; category: string; done: boolean; companyId?: string | null; summary?: string; impressions?: string; learned?: string; memo?: string; tasks?: ScheduleTodo[] };
 export type ScheduleTodo = { id: string; text: string; done: boolean };
+// 業界ごとの平均年収（企業研究→まとめ→平均年収で編集）。企業ごとではなく業界ごとに1つ。
+export type IndustrySalary = { name: string; value: string };
 export type ScheduleCategoryColor = { name: string; color: CardColor };
 // 開始・終了時間はどちらも任意（両方なし／片方だけも可）。
 export function formatTimeRange(item: Pick<ScheduleItem, "time" | "endTime">): string {
@@ -199,7 +200,7 @@ const starterSchedule: ScheduleItem[] = [
   { id: "task-3", title: "ES提出期限を登録", date: "2026-09-20", time: "23:59", category: "選考", done: false },
 ];
 
-type CloudPayload = { companies?: Company[]; cards?: InterviewCard[]; schedule?: ScheduleItem[]; pitchTemplates?: PitchTemplate[]; reverseQuestions?: ReverseQuestion[]; cardCategories?: string[]; gdTips?: GdTip[]; gdThemes?: GdTheme[]; scheduleCategoryColors?: ScheduleCategoryColor[] };
+type CloudPayload = { companies?: Company[]; cards?: InterviewCard[]; schedule?: ScheduleItem[]; pitchTemplates?: PitchTemplate[]; reverseQuestions?: ReverseQuestion[]; cardCategories?: string[]; gdTips?: GdTip[]; gdThemes?: GdTheme[]; scheduleCategoryColors?: ScheduleCategoryColor[]; industrySalaries?: IndustrySalary[] };
 // Maps each backup field to the localStorage key it lives under — the two
 // don't always match (cc_pitch_templates vs. pitchTemplates), so backup/
 // restore share this table instead of each guessing at the other's naming.
@@ -213,6 +214,7 @@ const BACKUP_FIELD_KEYS: Record<keyof CloudPayload, string> = {
   gdTips: "cc_gd_tips",
   gdThemes: "cc_gd_themes",
   scheduleCategoryColors: "cc_schedule_category_colors",
+  industrySalaries: "cc_industry_salaries",
 };
 
 function load<T>(key: string, fallback: T): T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; } }
@@ -250,6 +252,7 @@ function collectLocalData() {
     gdTips: load<GdTip[]>("cc_gd_tips", []),
     gdThemes: load<GdTheme[]>("cc_gd_themes", []),
     scheduleCategoryColors: load<ScheduleCategoryColor[]>("cc_schedule_category_colors", []),
+    industrySalaries: load<IndustrySalary[]>("cc_industry_salaries", []),
   };
 }
 let syncInFlight = false;
@@ -430,6 +433,7 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
   // rank tabs clears it, since a different criterion means a fresh order.
   const [manualOrder, setManualOrder] = useState<string[] | null>(null);
   const [industry, setIndustry] = useState("すべて");
+  const [industrySalaries, setIndustrySalaries] = usePersisted<IndustrySalary[]>("cc_industry_salaries", []);
   // Kept separate from newCompanyName below — one text field used to double
   // as both "filter the list" and "name the company you're adding", which
   // read as a single search box but silently did nothing when you typed
@@ -552,6 +556,18 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
       <section className="summary-banner"><div><p className="eyebrow light">ランキング</p><h2>企業を比べて、<br />志望度を整理する</h2><p>ランキングは志望度などから自動で並び替え、↑↓ボタンで自分の順位に調整できます。</p></div><Trophy size={54} strokeWidth={1.5} /></section>
       <div className="chip-row">{industries.map((item) => <button key={item} className={`chip ${industry === item ? "selected" : ""}`} onClick={() => setIndustry(item)}>{item}</button>)}</div>
       <div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => { setRank("interest"); setManualOrder(null); }}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => { setRank("salary"); setManualOrder(null); }}><span className="yen-icon">¥</span>平均年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => { setRank("benefits"); setManualOrder(null); }}><span>＋</span>福利厚生</button></div>
+      {rank === "salary" && <section className="industry-salary-card">
+        <h3>業界の平均年収</h3>
+        <p>業界ごとに1つ。自由に書き換えられます（例：600万円）。</p>
+        {(industry === "すべて" ? industries.filter((i) => i !== "すべて") : [industry]).map((name) => {
+          const saved = industrySalaries.find((x) => x.name === name);
+          // 以前の「業界の平均給与」欄に書いた内容は、まだ保存がなければ初期値として引き継ぐ
+          const legacy = companies.find((c) => c.industry === name && c.industryAvgSalary?.trim())?.industryAvgSalary ?? "";
+          const value = saved ? saved.value : legacy;
+          return <label key={name} className="industry-salary-row"><span>{name || "（業界未設定）"}</span>
+            <input value={value} placeholder="未入力" onChange={(e) => { const v = e.target.value; setIndustrySalaries((cur) => cur.some((x) => x.name === name) ? cur.map((x) => (x.name === name ? { ...x, value: v } : x)) : [...cur, { name, value: v }]); }} /></label>;
+        })}
+      </section>}
       <div className="card-filter"><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span></div>
       <div className="ranking-list">
         {sorted.map((c, i) => <div key={c.id} className="ranking-row">
@@ -578,10 +594,15 @@ function renderCompanyField(key: CompanyFieldKey, draft: Company, update: (key: 
       return <label key={key}>志望度<select value={draft.interest} onChange={(e) => update("interest", Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}</select></label>;
     case "interestScore":
       return <label key={key}>志望度スコア<input type="number" value={draft.interestScore ?? ""} placeholder="任意の点数" onChange={(e) => update("interestScore", e.target.value ? Number(e.target.value) : null)} /></label>;
-    case "startingSalary":
-      return <label key={key}>初任給（万円）<input type="number" value={draft.startingSalary ?? ""} placeholder="未入力" onChange={(e) => update("startingSalary", e.target.value ? Number(e.target.value) : null)} /></label>;
-    case "avgSalaryGraduate":
-      return <label key={key}>平均年収・学部卒（万円）<input type="number" value={draft.avgSalaryGraduate ?? ""} placeholder="未入力" onChange={(e) => update("avgSalaryGraduate", e.target.value ? Number(e.target.value) : null)} /></label>;
+    case "pay":
+      return <div key={key} className="wide pay-group">
+        <span className="pay-group-title">給与（初任給・平均年収・手当・残業代）</span>
+        <div className="pay-group-numbers">
+          <label>初任給・学部卒（万円）<input type="number" value={draft.startingSalary ?? ""} placeholder="未入力" onChange={(e) => update("startingSalary", e.target.value ? Number(e.target.value) : null)} /></label>
+          <label>平均年収・学部卒（万円）<input type="number" value={draft.avgSalaryGraduate ?? ""} placeholder="未入力" onChange={(e) => update("avgSalaryGraduate", e.target.value ? Number(e.target.value) : null)} /></label>
+        </div>
+        <label>給与・諸手当＋残業代の制度<AutoGrowTextarea value={draft.payOvertimeSystem} onChange={(e) => update("payOvertimeSystem", e.target.value)} placeholder="昇給・賞与、各種手当、みなし残業の有無など" /></label>
+      </div>;
     case "location":
       return <label key={key} className="wide">勤務地<AutoGrowTextarea value={draft.location} onChange={(e) => update("location", e.target.value)} placeholder="本社・支社など複数あれば改行して記入" /></label>;
     case "business":
@@ -614,12 +635,8 @@ function renderCompanyField(key: CompanyFieldKey, draft: Company, update: (key: 
       return <label key={key}>平均年齢<input value={draft.avgAge} onChange={(e) => update("avgAge", e.target.value)} placeholder="例：38.2歳" /></label>;
     case "programs":
       return <label key={key} className="wide">社内制度<AutoGrowTextarea value={draft.programs} onChange={(e) => update("programs", e.target.value)} placeholder="フレックス、リモートワーク、研修制度など" /></label>;
-    case "payOvertimeSystem":
-      return <label key={key} className="wide">給与・諸手当＋残業代の制度<AutoGrowTextarea value={draft.payOvertimeSystem} onChange={(e) => update("payOvertimeSystem", e.target.value)} placeholder="昇給・賞与、各種手当、みなし残業の有無など" /></label>;
     case "workHoursHolidays":
       return <label key={key} className="wide">勤務時間<AutoGrowTextarea value={draft.workHoursHolidays} onChange={(e) => update("workHoursHolidays", e.target.value)} placeholder="始業・終業時刻、フレックス・裁量労働の有無、残業の目安など" /></label>;
-    case "industryAvgSalary":
-      return <label key={key}>業界の平均給与<input value={draft.industryAvgSalary} onChange={(e) => update("industryAvgSalary", e.target.value)} placeholder="例：業界平均600万円" /></label>;
     case "revenue":
       return <label key={key}>売上高<input value={draft.revenue} onChange={(e) => update("revenue", e.target.value)} placeholder="例：1兆2,000億円（連結）" /></label>;
     case "customers":
@@ -686,7 +703,9 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   // against the current field list so a future new field still shows up
   // (appended at the end) even if it isn't in someone's already-saved order.
   const [fieldOrder, setFieldOrder] = usePersisted<CompanyFieldKey[]>("cc_company_field_order", DEFAULT_COMPANY_FIELD_ORDER);
-  const normalizedFieldOrder = [...fieldOrder.filter((k) => DEFAULT_COMPANY_FIELD_ORDER.includes(k)), ...DEFAULT_COMPANY_FIELD_ORDER.filter((k) => !fieldOrder.includes(k))];
+  // 旧版の「初任給」「平均年収」「給与・諸手当＋残業代の制度」は「給与」1項目にまとめる（いちばん上にあった位置を引き継ぐ）
+  const migratedOrder = Array.from(new Set((fieldOrder as string[]).map((k) => (k === "startingSalary" || k === "avgSalaryGraduate" || k === "payOvertimeSystem" ? "pay" : k)))) as CompanyFieldKey[];
+  const normalizedFieldOrder = [...migratedOrder.filter((k) => DEFAULT_COMPANY_FIELD_ORDER.includes(k)), ...DEFAULT_COMPANY_FIELD_ORDER.filter((k) => !migratedOrder.includes(k))];
   const [reorderingFields, setReorderingFields] = useState(false);
   const [logDraft, setLogDraft] = useState({ date: today, note: "" });
   const logs = draft.interviewLogs ?? [];

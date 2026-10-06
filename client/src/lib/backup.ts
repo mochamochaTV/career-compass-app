@@ -10,11 +10,12 @@ export type CareerCompassBackup = {
   gdTips?: unknown[];
   gdThemes?: unknown[];
   scheduleCategoryColors?: unknown[];
+  industrySalaries?: unknown[];
   exportedAt?: string;
   formatVersion?: number;
 };
 
-const KNOWN_ARRAY_FIELDS: (keyof CareerCompassBackup)[] = ["companies", "cards", "schedule", "pitchTemplates", "reverseQuestions", "cardCategories", "gdTips", "gdThemes", "scheduleCategoryColors"];
+const KNOWN_ARRAY_FIELDS: (keyof CareerCompassBackup)[] = ["companies", "cards", "schedule", "pitchTemplates", "reverseQuestions", "cardCategories", "gdTips", "gdThemes", "scheduleCategoryColors", "industrySalaries"];
 
 export function createBackupZip(data: CareerCompassBackup): Uint8Array {
   return zipSync({

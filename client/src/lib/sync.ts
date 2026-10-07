@@ -4,7 +4,7 @@ import { strFromU8, strToU8 } from "fflate";
 // 前回同期した時点（base）との3者比較で、項目ごとにマージする。
 
 export type SyncConfig = { owner: string; repo: string; token: string; path: string };
-export const SYNC_FIELDS = ["companies", "cards", "schedule", "pitchTemplates", "reverseQuestions", "cardCategories", "gdTips", "gdThemes", "scheduleCategoryColors", "industrySalaries"] as const;
+export const SYNC_FIELDS = ["companies", "cards", "schedule", "pitchTemplates", "reverseQuestions", "cardCategories", "gdTips", "gdThemes", "scheduleCategoryColors", "industrySalaries", "companyFieldOrder"] as const;
 export type SyncField = typeof SYNC_FIELDS[number];
 export type SyncData = Partial<Record<SyncField, unknown[]>>;
 
@@ -24,7 +24,7 @@ function keyOf(field: SyncField, item: unknown): string | null {
   if (typeof item === "string") return item;
   if (item && typeof item === "object") {
     const o = item as Record<string, unknown>;
-    const k = field === "scheduleCategoryColors" || field === "industrySalaries" ? o.name : o.id;
+    const k = field === "scheduleCategoryColors" || field === "industrySalaries" || field === "companyFieldOrder" ? o.name : o.id;
     return typeof k === "string" ? k : null;
   }
   return null;

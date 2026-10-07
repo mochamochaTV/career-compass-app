@@ -971,3 +971,65 @@ body { background: var(--background); color: var(--foreground); }
 .experience-entry-head .icon-button:first-of-type{margin-left:auto}
 .es-entry .experience-entry-head .icon-button:nth-of-type(2){margin-left:0}
 @media (max-width:420px){.editor-tabs button{font-size:11px;padding:9px 3px}}
+
+/* 比較表 */
+.compare-wrap{margin-top:14px}
+.compare-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e8e7f2;border-radius:14px;background:#fff}
+.compare-table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
+.compare-table th,.compare-table td{padding:10px 12px;text-align:left;white-space:nowrap;border-bottom:1px solid #f0eff7;vertical-align:top}
+.compare-table thead th{font-size:10px;color:#77778b;background:#f7f7fb;position:sticky;top:0}
+.compare-table tbody th{position:sticky;left:0;background:#fff;z-index:1;font-weight:700;min-width:96px}
+.compare-table tr:last-child th,.compare-table tr:last-child td{border-bottom:0}
+.compare-name{display:grid;gap:2px;text-align:left;background:transparent;color:#6654d9;font-weight:700;font-size:13px}
+.compare-name small{color:#9999aa;font-weight:400;font-size:10px}
+.compare-dim{color:#d0d0dc}
+.compare-text{white-space:normal;min-width:150px;max-width:220px;line-height:1.5}
+.dark .compare-scroll{background:transparent;border-color:rgba(255,255,255,.18)}
+.dark .compare-table thead th,.dark .compare-table tbody th{background:#1f1f2e}
+.dark .compare-table th,.dark .compare-table td{border-color:rgba(255,255,255,.1)}
+.rank-tabs{overflow-x:auto}.rank-tabs button{flex:0 0 auto}
+
+/* ホーム：直近の予定までの日数 */
+.countdown-card{margin-top:16px;padding:14px;border:1px solid #e8e7f2;border-radius:18px;background:#fff}
+.countdown-list{display:grid;gap:8px;margin-top:8px}
+.countdown-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;background:#f7f7fb;text-align:left;color:inherit;width:100%}
+.countdown-days{display:grid;justify-items:center;min-width:54px;line-height:1}
+.countdown-days strong{font-size:28px;font-weight:800;color:#6654d9;font-variant-numeric:tabular-nums}
+.countdown-days small{font-size:10px;font-weight:700;color:#77778b;margin-top:3px}
+.countdown-main{flex:1;min-width:0;display:grid;gap:3px}
+.countdown-main strong{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.countdown-main small{font-size:11px;color:#77778b}
+.countdown-item.soon .countdown-days strong{color:#b3691b}
+.countdown-item.urgent{background:#fff4e8}.countdown-item.urgent .countdown-days strong{color:#d9701f}
+.countdown-item.overdue{background:#fdeeee}.countdown-item.overdue .countdown-days strong,.countdown-item.overdue .countdown-days small{color:#c94a4a}
+.dark .countdown-card{background:transparent;border-color:rgba(255,255,255,.18)}
+.dark .countdown-item{background:rgba(255,255,255,.06)}
+.dark .countdown-item.urgent{background:rgba(217,112,31,.18)}.dark .countdown-item.overdue{background:rgba(201,74,74,.2)}
+.home-screen .hero-card{margin-top:14px}
+
+/* 基本情報：すべて／入力済みだけの切り替え */
+.basic-view-toggle{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.basic-view-toggle button{padding:6px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.35);background:transparent;color:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.basic-view-toggle button.active{background:#6654d9;border-color:#6654d9;color:#fff}
+.basic-view-toggle span{margin-left:auto;font-size:11px;color:#77778b}
+
+/* ===== 見やすさの調整（3回目） ===== */
+/* 企業カード：1行目＝企業名と選考状況／2行目＝業界・勤務地と志望度／3行目＝タグ */
+.company-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.company-title strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.company-title .stage-tag { flex: none; }
+.company-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.company-meta-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.company-meta-stars { flex: none; letter-spacing: 1px; color: #e0a53e; font-size: 12px; }
+.company-card-main .tag-chip-row { margin-top: 6px; }
+/* スマホでは紫バナーの説明文を省いて、本題をすぐ見せる */
+@media (max-width: 760px) { .summary-banner p:not(.eyebrow), .schedule-hero p:not(.eyebrow) { display: none; } .summary-banner, .schedule-hero { padding: 18px 22px; } }
+
+/* 4th pass: page-lead compact on mobile */
+@media (max-width: 760px) {
+  .page-lead { padding-bottom: 14px; }
+  .page-lead h2 { font-size: 21px; margin: 4px 0 6px; }
+  .page-lead > svg { display: none; }
+  .practice-stats-card { margin-top: 12px; padding: 14px; }
+  .practice-bar-chart { height: 72px; margin-top: 10px; }
+}

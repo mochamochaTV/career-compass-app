@@ -40,6 +40,12 @@ describe("sync merge", () => {
     expect(mergeArrays("cardCategories", ["基本", "新"], ["基本", "志望動機"], ["基本"]).sort()).toEqual(["基本", "志望動機", "新"].sort());
     expect(mergeArrays("scheduleCategoryColors", [{ name: "面接", color: "blue" }], [{ name: "面接", color: "red" }], [{ name: "面接", color: "blue" }])).toEqual([{ name: "面接", color: "red" }]);
   });
+  it("field order: the more recently changed order wins", () => {
+    const older = { name: "order", keys: ["a", "b"], updatedAt: "2026-10-01T00:00:00.000Z" };
+    const newer = { name: "order", keys: ["b", "a"], updatedAt: "2026-10-02T00:00:00.000Z" };
+    expect(mergeArrays("companyFieldOrder", [older], [newer], [older])).toEqual([newer]);
+    expect(mergeArrays("companyFieldOrder", [older], [newer], undefined)).toEqual([newer]);
+  });
   it("sameData ignores key order", () => {
     expect(sameData({ cards: [{ id: "1", a: 1, b: 2 }] }, { cards: [{ b: 2, id: "1", a: 1 }] })).toBe(true);
     expect(mergeData({}, {}, null).cards).toEqual([]);

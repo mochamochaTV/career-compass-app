@@ -15,7 +15,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 
 type Screen = "home" | "research" | "interview" | "schedule" | "settings";
 type ResearchMode = "research" | "summary" | "progress";
-type RankMode = "interest" | "salary" | "benefits";
+type RankMode = "interest" | "salary" | "benefits" | "compare";
 // The selection process, in order — used both to render the "進捗" pipeline
 // board (grouped by stage) and to populate the stage picker in
 // CompanyEditor. A company with no stage recorded yet (e.g. restored from an
@@ -54,6 +54,8 @@ export type Company = {
   // 体験談（社員の声・学生の声・選考体験談など）は基本情報とは別タブで、複数件を記録する。
   // 旧データは起動時に引き継ぐ。`experience`は以前の版の名残（読み込み専用）。
   experiences?: ExperienceEntry[];
+  // この企業への志望動機（ESタブから引用できる）
+  motivation?: string;
   // ES（エントリーシート）：設問ごとの回答・文字数上限・提出状況。
   esEntries?: EsEntry[];
   experience?: string;
@@ -77,7 +79,7 @@ const EXPERIENCE_KINDS: { key: ExperienceKind; label: string }[] = [
 ];
 export type CompanyFieldKey =
   | "industry" | "interest" | "interestScore" | "pay" | "location"
-  | "business" | "benefits" | "holidays" | "philosophy" | "person"
+  | "business" | "benefits" | "holidays" | "philosophy" | "person" | "motivation"
   | "strengthFit" | "notes" | "sources" | "tags"
   | "companyOverview" | "founded" | "capital" | "employeeCount" | "avgAge" | "programs"
   | "workHoursHolidays" | "revenue" | "customers"
@@ -86,7 +88,7 @@ export const COMPANY_FIELD_LABELS: Record<CompanyFieldKey, string> = {
   industry: "業界", interest: "志望度（★評価）", interestScore: "志望度スコア",
   pay: "給与（初任給・平均年収・手当・残業代）", location: "勤務地",
   business: "事業内容", benefits: "福利厚生", holidays: "休日制度・年間休日・休暇制度",
-  philosophy: "企業理念", person: "求める人物像",
+  philosophy: "企業理念", person: "求める人物像", motivation: "志望動機",
   strengthFit: "自分の強みが生かせるか", notes: "自分のメモ",
   sources: "参考URL", tags: "タグ",
   companyOverview: "企業概要", founded: "設立", capital: "資本金", employeeCount: "社員数",
@@ -101,7 +103,7 @@ export const DEFAULT_COMPANY_FIELD_ORDER: CompanyFieldKey[] = [
   "programs", "benefits", "pay", "workHoursHolidays", "holidays",
   "recruitingInfo", "annualHiringTrend",
   "person", "outlook",
-  "interest", "interestScore", "strengthFit",
+  "interest", "interestScore", "motivation", "strengthFit",
   "notes", "sources", "tags",
 ];
 export type SelfRating = "excellent" | "good" | "fair" | "poor";
@@ -257,8 +259,11 @@ function collectLocalData() {
     gdThemes: load<GdTheme[]>("cc_gd_themes", []),
     scheduleCategoryColors: load<ScheduleCategoryColor[]>("cc_schedule_category_colors", []),
     industrySalaries: load<IndustrySalary[]>("cc_industry_salaries", []),
+    // 項目の並び順（端末間で揃える）。並び替えたことがなければ空のまま。
+    companyFieldOrder: (() => { const keys = load<string[] | null>("cc_company_field_order", null); return Array.isArray(keys) && keys.length ? [{ name: "order", keys, updatedAt: load<string>(FIELD_ORDER_AT_KEY, "") }] : []; })(),
   };
 }
+const FIELD_ORDER_AT_KEY = "cc_company_field_order_at";
 let syncInFlight = false;
 async function syncNow(mode: SyncMode = "merge"): Promise<SyncStatus> {
   const finish = (ok: boolean, message: string) => {
@@ -279,7 +284,9 @@ async function syncNow(mode: SyncMode = "merge"): Promise<SyncStatus> {
     if (res.changedLocal) {
       // 万一に備えて、取り込む直前の内容を端末内に退避しておく
       try { localStorage.setItem("cc_pre_sync_backup", JSON.stringify({ at: new Date().toISOString(), data: local })); } catch { /* ignore */ }
-      SYNC_FIELDS.forEach((f) => localStorage.setItem(BACKUP_FIELD_KEYS[f], JSON.stringify(res.merged[f] ?? [])));
+      SYNC_FIELDS.forEach((f) => { if (f !== "companyFieldOrder") localStorage.setItem(BACKUP_FIELD_KEYS[f], JSON.stringify(res.merged[f] ?? [])); });
+      const ord = (res.merged.companyFieldOrder?.[0] ?? null) as { keys?: unknown; updatedAt?: string } | null;
+      if (ord && Array.isArray(ord.keys)) { localStorage.setItem("cc_company_field_order", JSON.stringify(ord.keys)); localStorage.setItem(FIELD_ORDER_AT_KEY, JSON.stringify(ord.updatedAt ?? "")); }
       window.dispatchEvent(new Event("cc-data-replaced"));
     }
     localStorage.setItem(SYNC_BASE_KEY, JSON.stringify(res.merged));
@@ -387,11 +394,6 @@ function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[];
   // once. Companies already at 未応募/内定/不合格/辞退 aren't "in progress"
   // so staleness there isn't meaningful.
   const now = Date.now();
-  const soonCutoff = now + 3 * 24 * 60 * 60 * 1000;
-  const upcoming = schedule
-    .filter((x) => !x.done && new Date(`${x.date}T${x.time || "23:59"}`).getTime() <= soonCutoff)
-    .sort(byScheduleTime)
-    .slice(0, 2);
   const inactiveStages = new Set<CompanyStage>(["未応募", "内定", "不合格", "辞退"]);
   const staleCutoffMs = 14 * 24 * 60 * 60 * 1000;
   const stalledCompanies = companies
@@ -407,15 +409,26 @@ function HomeScreen({ companies, schedule, onNavigate }: { companies: Company[];
   })();
   const hasBackup = (() => { try { return !!localStorage.getItem("cc_last_backup"); } catch { return false; } })();
   const backupDue = backupAgeDays >= 7;
-  const hasAttention = upcoming.length > 0 || stalledCompanies.length > 0 || backupDue;
+  const hasAttention = stalledCompanies.length > 0 || backupDue;
+  // 直近の予定までの日数（カレンダーの日付で数える：今日=0、明日=1、過ぎていればマイナス）
+  const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+  const daysUntil = (date: string) => Math.round((new Date(`${date}T00:00:00`).getTime() - todayMidnight.getTime()) / 86400000);
+  const countdown = schedule.filter((x) => !x.done).sort(byScheduleTime).slice(0, 3);
 
   return <div className="screen home-screen"><Header title="おかえりなさい" eyebrow="ホーム" onMenu={() => onNavigate("settings")} /><InstallBanner /><section className="hero-card"><div><p className="eyebrow light">今日のポイント</p><h2>次の一歩を、<br /><em>今日のうちに。</em></h2><p className="hero-copy">企業研究と面接準備を、ここでひとつに。</p></div><div className="hero-orbit"><Target size={34} /><span>準備度<br /><strong>{Math.min(100, companies.length * 12 + 34)}%</strong></span></div></section>
+    {countdown.length > 0 && <section className="countdown-card" aria-label="直近の予定までの日数">
+      <div className="attention-header"><CalendarDays size={15} /><span>直近の予定</span></div>
+      <div className="countdown-list">{countdown.map((task) => { const d = daysUntil(task.date); const tone = d < 0 ? "overdue" : d <= 1 ? "urgent" : d <= 3 ? "soon" : ""; return (
+        <button key={task.id} className={`countdown-item ${tone}`} onClick={() => onNavigate("schedule")}>
+          <span className="countdown-days"><strong>{d < 0 ? Math.abs(d) : d}</strong><small>{d < 0 ? "日超過" : d === 0 ? "今日" : "日後"}</small></span>
+          <span className="countdown-main"><strong>{task.title}</strong><small>{task.date.slice(5).replace("-", "/")} · {formatTimeRange(task)} · {task.category}</small></span><ChevronRight size={15} />
+        </button>); })}</div>
+    </section>}
     {hasAttention && <section className="attention-card">
       <div className="attention-header"><AlertCircle size={15} /><span>注目</span></div>
       {/* An icon per row (not just a colored dot) so the reason something is
           flagged doesn't rely on color alone — a clock for "coming up soon",
           a pause for "stopped moving". */}
-      {upcoming.map((task) => <button className="attention-row" key={task.id} onClick={() => onNavigate("schedule")}><Clock size={14} className="attention-icon due" /><span className="attention-content"><strong>{task.title}</strong><small>{task.date} · {formatTimeRange(task)} · {task.category}{task.location ? ` · ${task.location}` : ""}</small></span><ChevronRight size={15} /></button>)}
       {backupDue && <button className="attention-row" onClick={() => onNavigate("settings")}><Download size={14} className="attention-icon stalled" /><span className="attention-content"><strong>バックアップをおすすめします</strong><small>{hasBackup ? `前回のバックアップから${backupAgeDays}日たっています` : "まだバックアップを保存していません"}（ブラウザのデータが消えても復元できます）</small></span><ChevronRight size={15} /></button>}
       {stalledCompanies.map((c) => <button className="attention-row" key={c.id} onClick={() => onNavigate("research")}><Pause size={14} className="attention-icon stalled" /><span className="attention-content"><strong>{c.name}</strong><small>「{stageOf(c)}」のまま2週間以上動きがありません</small></span><ChevronRight size={15} /></button>)}
     </section>}
@@ -459,7 +472,7 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
   const industries = ["すべて", ...Array.from(new Set(companies.map((c) => c.industry)))];
   const allTags = Array.from(new Set(companies.flatMap((c) => c.tags ?? [])));
   const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && (tagFilter === "すべて" || (c.tags ?? []).includes(tagFilter)) && c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  const autoSorted = [...filtered].sort((a, b) => rank === "interest" ? b.interest - a.interest : rank === "salary" ? (b.avgSalaryGraduate ?? -1) - (a.avgSalaryGraduate ?? -1) : b.benefits.length - a.benefits.length);
+  const autoSorted = [...filtered].sort((a, b) => rank === "interest" || rank === "compare" ? b.interest - a.interest : rank === "salary" ? (b.avgSalaryGraduate ?? -1) - (a.avgSalaryGraduate ?? -1) : b.benefits.length - a.benefits.length);
   // Apply any manual drag order first, then fall back to the automatic sort
   // for companies that aren't part of it yet (newly added, or newly matching
   // the current filter) so they still show up rather than vanishing.
@@ -507,7 +520,7 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
       <div className="card-filter"><span>{searchQuery || tagFilter !== "すべて" ? `${filtered.length} / ${companies.length}社` : `${companies.length}社`}</span><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span></div>
       <div className="company-list">
         {filtered.map((c, index) => <div key={c.id} className="company-card">
-          <button className="company-card-tap" onClick={() => openCompany(c)}><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className="industry-tag">{c.industry}</span><span className={`stage-tag stage-tag-${STAGE_TONE[stageOf(c)]}`}>{stageOf(c)}</span></div><div className="company-meta"><span>勤務地 {c.location}</span><span>志望度 {"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div>{c.tags && c.tags.length > 0 && <div className="tag-chip-row">{c.tags.map((tag) => <span key={tag} className="tag-chip-plain">#{tag}</span>)}</div>}</div><ChevronRight size={18} /></button>
+          <button className="company-card-tap" onClick={() => openCompany(c)}><div className="company-avatar">{c.name.slice(0, 1)}</div><div className="company-card-main"><div className="company-title"><strong>{c.name}</strong><span className={`stage-tag stage-tag-${STAGE_TONE[stageOf(c)]}`}>{stageOf(c)}</span></div><div className="company-meta"><span className="company-meta-sub">{[c.industry, c.location].filter(Boolean).join(" ・ ")}</span><span className="company-meta-stars" aria-label={`志望度 ${c.interest}/5`}>{"★".repeat(c.interest)}{"☆".repeat(5 - c.interest)}</span></div>{c.tags && c.tags.filter((t) => t !== c.industry).length > 0 && <div className="tag-chip-row">{c.tags.filter((t) => t !== c.industry).map((tag) => <span key={tag} className="tag-chip-plain">#{tag}</span>)}</div>}</div><ChevronRight size={18} /></button>
           <div className="card-order-buttons-col">
             <button className="order-step-button" aria-label="上に移動" disabled={index === 0} onClick={() => reorderCompanies(moveItem(filtered.map((x) => x.id), index, -1))}><ChevronUp size={14} /></button>
             <button className="order-step-button" aria-label="下に移動" disabled={index === filtered.length - 1} onClick={() => reorderCompanies(moveItem(filtered.map((x) => x.id), index, 1))}><ChevronDown size={14} /></button>
@@ -559,7 +572,7 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
     </> : <>
       <section className="summary-banner"><div><p className="eyebrow light">ランキング</p><h2>企業を比べて、<br />志望度を整理する</h2><p>ランキングは志望度などから自動で並び替え、↑↓ボタンで自分の順位に調整できます。</p></div><Trophy size={54} strokeWidth={1.5} /></section>
       <div className="chip-row">{industries.map((item) => <button key={item} className={`chip ${industry === item ? "selected" : ""}`} onClick={() => setIndustry(item)}>{item}</button>)}</div>
-      <div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => { setRank("interest"); setManualOrder(null); }}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => { setRank("salary"); setManualOrder(null); }}><span className="yen-icon">¥</span>平均年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => { setRank("benefits"); setManualOrder(null); }}><span>＋</span>福利厚生</button></div>
+      <div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => { setRank("interest"); setManualOrder(null); }}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => { setRank("salary"); setManualOrder(null); }}><span className="yen-icon">¥</span>平均年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => { setRank("benefits"); setManualOrder(null); }}><span>＋</span>福利厚生</button><button className={rank === "compare" ? "active" : ""} onClick={() => { setRank("compare"); setManualOrder(null); }}><span>▦</span>比較表</button></div>
       {rank === "salary" && <section className="industry-salary-card">
         <h3>業界の平均年収</h3>
         <p>業界ごとに1つ。自由に書き換えられます（例：600万円）。</p>
@@ -572,6 +585,10 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
             <input value={value} placeholder="未入力" onChange={(e) => { const v = e.target.value; setIndustrySalaries((cur) => cur.some((x) => x.name === name) ? cur.map((x) => (x.name === name ? { ...x, value: v } : x)) : [...cur, { name, value: v }]); }} /></label>;
         })}
       </section>}
+      {rank === "compare" && <div className="compare-wrap"><div className="compare-scroll"><table className="compare-table"><thead><tr><th>企業</th><th>志望度</th><th>状況</th><th>初任給</th><th>平均年収</th><th>勤務地</th><th>休日・休暇</th></tr></thead><tbody>
+        {sorted.map((c) => <tr key={c.id}><th><button className="compare-name" onClick={() => openCompany(c)}>{c.name}<small>{c.industry}</small></button></th><td>{"★".repeat(c.interest)}<span className="compare-dim">{"☆".repeat(5 - c.interest)}</span></td><td>{c.stage ?? "未応募"}</td><td>{c.startingSalary ? `${c.startingSalary}万円` : "–"}</td><td>{c.avgSalaryGraduate ? `${c.avgSalaryGraduate}万円` : "–"}</td><td>{c.location || "–"}</td><td className="compare-text">{c.holidays?.trim() || "–"}</td></tr>)}
+      </tbody></table></div>{!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}<p className="company-cards-hint">企業名をタップすると詳細を開けます。左右にスクロールできます。</p></div>}
+      {rank !== "compare" && <>
       <div className="card-filter"><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span></div>
       <div className="ranking-list">
         {sorted.map((c, i) => <div key={c.id} className="ranking-row">
@@ -583,6 +600,7 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
         </div>)}
         {!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}
       </div>
+      </>}
     </>}
   </div>;
 }
@@ -639,6 +657,8 @@ function renderCompanyField(key: CompanyFieldKey, draft: Company, update: (key: 
       return <label key={key}>平均年齢<input value={draft.avgAge} onChange={(e) => update("avgAge", e.target.value)} placeholder="例：38.2歳" /></label>;
     case "programs":
       return <label key={key} className="wide">社内制度<AutoGrowTextarea value={draft.programs} onChange={(e) => update("programs", e.target.value)} placeholder="フレックス、リモートワーク、研修制度など" /></label>;
+    case "motivation":
+      return <label key={key} className="wide">志望動機<AutoGrowTextarea value={draft.motivation ?? ""} onChange={(e) => update("motivation", e.target.value)} placeholder="この企業を志望する理由（ESタブの回答に引用できます）" /></label>;
     case "workHoursHolidays":
       return <label key={key} className="wide">勤務時間<AutoGrowTextarea value={draft.workHoursHolidays} onChange={(e) => update("workHoursHolidays", e.target.value)} placeholder="始業・終業時刻、フレックス・裁量労働の有無、残業の目安など" /></label>;
     case "revenue":
@@ -711,6 +731,18 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   const migratedOrder = Array.from(new Set((fieldOrder as string[]).map((k) => (k === "startingSalary" || k === "avgSalaryGraduate" || k === "payOvertimeSystem" ? "pay" : k)))) as CompanyFieldKey[];
   const normalizedFieldOrder = [...migratedOrder.filter((k) => DEFAULT_COMPANY_FIELD_ORDER.includes(k)), ...DEFAULT_COMPANY_FIELD_ORDER.filter((k) => !migratedOrder.includes(k))];
   const [reorderingFields, setReorderingFields] = useState(false);
+  // 基本情報が長いので、入力済みの項目だけに絞って読みやすくできる（端末に記憶）
+  const [onlyFilled, setOnlyFilled] = usePersisted<boolean>("cc_company_only_filled", false);
+  const fieldHasValue = (key: CompanyFieldKey): boolean => {
+    if (key === "interest") return true;
+    if (key === "pay") return draft.startingSalary != null || draft.avgSalaryGraduate != null || !!draft.payOvertimeSystem?.trim();
+    const v = (draft as unknown as Record<string, unknown>)[key];
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === "string") return v.trim().length > 0 && v.trim() !== "情報を追加" && v.trim() !== "調査して追記";
+    return v !== null && v !== undefined;
+  };
+  const filledCount = normalizedFieldOrder.filter((k) => k !== "interest" && fieldHasValue(k)).length;
+  const shownFields = onlyFilled ? normalizedFieldOrder.filter(fieldHasValue) : normalizedFieldOrder;
   const [logDraft, setLogDraft] = useState({ date: today, note: "" });
   const logs = draft.interviewLogs ?? [];
   const addLog = () => {
@@ -798,7 +830,12 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
       <button className={tab === "experience" ? "active" : ""} onClick={() => setTab("experience")}>体験談{experiences.length > 0 && <small>{experiences.length}</small>}</button>
       <button className={tab === "es" ? "active" : ""} onClick={() => setTab("es")}>ES{esEntries.length > 0 && <small>{esEntries.length}</small>}</button>
     </div>{tabsHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
-    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label>{normalizedFieldOrder.map((key) => {
+    {tab === "basic" && <div className="basic-view-toggle" role="group" aria-label="表示する項目">
+      <button type="button" className={!onlyFilled ? "active" : ""} onClick={() => setOnlyFilled(false)}>すべての項目</button>
+      <button type="button" className={onlyFilled ? "active" : ""} onClick={() => setOnlyFilled(true)}>入力済みだけ</button>
+      <span>入力済み {filledCount} / {normalizedFieldOrder.length - 1}</span>
+    </div>}
+    {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label>{shownFields.map((key) => {
       const field = renderCompanyField(key, draft, update);
       const isWide = typeof field.props.className === "string" && field.props.className.includes("wide");
       const status = draft.fieldStatus?.[key];
@@ -848,6 +885,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
           <input value={esForm.question} onChange={(e) => setEsForm({ ...esForm, question: e.target.value })} placeholder="設問　例：志望動機を教えてください" />
           <input type="number" inputMode="numeric" value={esForm.limit} onChange={(e) => setEsForm({ ...esForm, limit: e.target.value })} placeholder="文字数の上限（任意）　例：400" />
           <AutoGrowTextarea value={esForm.answer} onChange={(e) => setEsForm({ ...esForm, answer: e.target.value })} placeholder="回答を書く（下書きでもOK）" />
+          {draft.motivation?.trim() && <button type="button" className="secondary-button" onClick={() => setEsForm({ ...esForm, answer: esForm.answer.trim() ? `${esForm.answer.replace(/\s+$/, "")}\n${draft.motivation!.trim()}` : draft.motivation!.trim() })}><FileText size={14} />基本情報の志望動機を引用</button>}
           <div className={`es-count ${esForm.limit && charCount(esForm.answer) > Number(esForm.limit) ? "over" : ""}`}>{charCount(esForm.answer)}{esForm.limit ? ` / ${esForm.limit}` : ""} 字</div>
           <div className="experience-form-actions"><button type="button" className="secondary-button" onClick={() => setEsForm(null)}>やめる</button><button type="button" className="primary-button" onClick={saveEsForm}>{esForm.id ? "更新する" : "追加する"}</button></div>
         </div>}
@@ -922,7 +960,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
     <div className="company-page-footer"><button className="danger-button" onClick={() => { if (window.confirm(`「${draft.name}」を削除しますか？この操作は取り消せません。`)) onDelete(); }}><Trash2 size={16} />この企業を削除</button></div>
     </section>
   </div>
-  {reorderingFields && <FieldOrderManager order={normalizedFieldOrder} onChange={setFieldOrder} onClose={() => setReorderingFields(false)} />}
+  {reorderingFields && <FieldOrderManager order={normalizedFieldOrder} onChange={(order) => { setFieldOrder(order); try { localStorage.setItem(FIELD_ORDER_AT_KEY, JSON.stringify(new Date().toISOString())); } catch { /* ignore */ } }} onClose={() => setReorderingFields(false)} />}
   {pickingCards && <CardPickerModal cards={cards} excludeIds={[...linkedCards.map((c) => c.id), ...(draft.extraCardIds ?? [])]} companies={companies} onClose={() => setPickingCards(false)} onAdd={(ids) => { update("extraCardIds", [...(draft.extraCardIds ?? []), ...ids]); setPickingCards(false); toast.success(`${ids.length}枚を追加しました（保存で反映）`); }} />}
   </>;
 }
@@ -1763,7 +1801,7 @@ function ScheduleDetail({ item, companyName, colorKey, onClose, onSave, onToggle
           </div>)}
           {!tasks.length && <p className="child-empty-hint">提出物・事前課題・持ち物などを追加して、終わったらチェックできます。</p>}
         </div>
-        <div className="schedule-todo-add"><input value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); addTask(); } }} placeholder="例：履歴書を印刷する／課題を提出する" /><button type="button" className="secondary-button" onClick={addTask}><Plus size={15} />追加</button></div>
+        <div className="schedule-todo-add"><input value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); addTask(); } }} placeholder="例：履歴書を印刷する" /><button type="button" className="secondary-button" onClick={addTask}><Plus size={15} />追加</button></div>
       </div>
       <div className="form-grid">{fields.map((f) => <label className="wide" key={f.key}>{f.label}<AutoGrowTextarea value={form[f.key]} onChange={(e) => setForm((d) => ({ ...d, [f.key]: e.target.value }))} placeholder={f.placeholder} /></label>)}</div>
     </section>

@@ -54,6 +54,8 @@ export type Company = {
   // 体験談（社員の声・学生の声・選考体験談など）は基本情報とは別タブで、複数件を記録する。
   // 旧データは起動時に引き継ぐ。`experience`は以前の版の名残（読み込み専用）。
   experiences?: ExperienceEntry[];
+  // ES（エントリーシート）：設問ごとの回答・文字数上限・提出状況。
+  esEntries?: EsEntry[];
   experience?: string;
   stage?: CompanyStage; interviewLogs?: InterviewLogEntry[]; tags?: string[];
   fieldStatus?: Partial<Record<CompanyFieldKey, FieldStatus>>;
@@ -65,6 +67,8 @@ export type Company = {
 // company, since someone who cares about salary and someone who wants
 // 企業理念 first both want that choice to stick everywhere, not per
 // company. 企業名 isn't here: it's the editor's own title, always first.
+export type EsEntry = { id: string; question: string; answer: string; limit: number | null; done: boolean; updatedAt: string };
+const charCount = (t: string) => Array.from(t.replace(/\s+$/g, "")).length;
 export type ExperienceKind = "employee" | "student" | "selection" | "other";
 export type ExperienceEntry = { id: string; kind: ExperienceKind; title: string; text: string; source: string; createdAt: string };
 const EXPERIENCE_KINDS: { key: ExperienceKind; label: string }[] = [
@@ -685,7 +689,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   // added on top of the original basic-info form — enough that it read as
   // one long wall of fields. Splitting it into tabs means only one section's
   // worth of controls is visible at a time.
-  const [tab, setTab] = useState<"basic" | "progress" | "cards" | "experience">("basic");
+  const [tab, setTab] = useState<"basic" | "progress" | "cards" | "experience" | "es">("basic");
   // The stage row only exists in the DOM once the 進捗・メモ tab is actually
   // shown, so re-measure whenever `tab` changes rather than just once on
   // mount (when this element isn't rendered yet).
@@ -729,6 +733,21 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
     setExpForm(null);
   };
   const removeExperience = (id: string) => { if (window.confirm("この体験談を削除しますか？")) setDraft((d) => ({ ...d, experiences: (d.experiences ?? []).filter((e) => e.id !== id) })); };
+  const esEntries = draft.esEntries ?? [];
+  const [esForm, setEsForm] = useState<{ id: string | null; question: string; answer: string; limit: string } | null>(null);
+  const saveEsForm = () => {
+    if (!esForm) return;
+    if (!esForm.question.trim()) return toast.error("設問を入力してください");
+    const limit = esForm.limit.trim() ? Number(esForm.limit) : null;
+    if (limit !== null && (!Number.isFinite(limit) || limit <= 0)) return toast.error("文字数の上限は数字で入力してください");
+    const prev = esEntries.find((e) => e.id === esForm.id);
+    const entry: EsEntry = { id: esForm.id ?? `es-${Date.now()}`, question: esForm.question.trim(), answer: esForm.answer, limit, done: prev?.done ?? false, updatedAt: new Date().toISOString() };
+    setDraft((d) => { const list = d.esEntries ?? []; return { ...d, esEntries: esForm.id ? list.map((e) => (e.id === entry.id ? entry : e)) : [...list, entry] }; });
+    setEsForm(null);
+  };
+  const toggleEsDone = (id: string) => setDraft((d) => ({ ...d, esEntries: (d.esEntries ?? []).map((e) => (e.id === id ? { ...e, done: !e.done, updatedAt: new Date().toISOString() } : e)) }));
+  const removeEs = (id: string) => { if (window.confirm("このESの設問を削除しますか？")) setDraft((d) => ({ ...d, esEntries: (d.esEntries ?? []).filter((e) => e.id !== id) })); };
+  const copyEs = async (text: string) => { try { await navigator.clipboard.writeText(text); toast.success("回答をコピーしました"); } catch { toast.error("コピーできませんでした"); } };
   const removeLog = (id: string) => setDraft((d) => ({ ...d, interviewLogs: (d.interviewLogs ?? []).filter((l) => l.id !== id) }));
   // Interview cards written specifically for this company — linked from the
   // card's own editor (see InterviewScreen's company picker). Shown here
@@ -738,7 +757,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   const companySchedule = schedule.filter((i) => i.companyId === company.id).sort((a, b) => scheduleSortKey(b).localeCompare(scheduleSortKey(a)));
   const [flippedId, setFlippedId] = useState<string | null>(null);
   const [pickingCards, setPickingCards] = useState(false);
-  const tabsHint = useEdgeScrollHint<HTMLDivElement>([logs.length, linkedCards.length, (draft.experiences ?? []).length]);
+  const tabsHint = useEdgeScrollHint<HTMLDivElement>([logs.length, linkedCards.length, (draft.experiences ?? []).length, (draft.esEntries ?? []).length]);
   // Shares only the "public-facing research" fields of whatever is currently
   // in the draft (so an unsaved edit is reflected), never 自分のメモ or
   // 振り返りメモ — see lib/share.ts for why those stay out entirely.
@@ -777,6 +796,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
       <button className={tab === "progress" ? "active" : ""} onClick={() => setTab("progress")}>進捗・メモ{logs.length > 0 && <small>{logs.length}</small>}</button>
       <button className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>紐づくカード{linkedCards.length > 0 && <small>{linkedCards.length}</small>}</button>
       <button className={tab === "experience" ? "active" : ""} onClick={() => setTab("experience")}>体験談{experiences.length > 0 && <small>{experiences.length}</small>}</button>
+      <button className={tab === "es" ? "active" : ""} onClick={() => setTab("es")}>ES{esEntries.length > 0 && <small>{esEntries.length}</small>}</button>
     </div>{tabsHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
     {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label>{normalizedFieldOrder.map((key) => {
       const field = renderCompanyField(key, draft, update);
@@ -818,6 +838,36 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
         </div>
       </div>
     </>}
+    {tab === "es" && <div className="es-tab">
+      <div className="editor-section flush">
+        <h3>ES（エントリーシート） <span className="count-badge">{esEntries.length}</span></h3>
+        <p className="company-cards-hint">設問ごとに回答を書いて、文字数の上限に収まっているか確認できます。提出したら「提出済み」にしておきましょう。</p>
+        {esEntries.length > 0 && <p className="es-progress">提出済み {esEntries.filter((e) => e.done).length} / {esEntries.length}</p>}
+        {!esForm && <button type="button" className="secondary-button" onClick={() => setEsForm({ id: null, question: "", answer: "", limit: "" })}><Plus size={15} />設問を追加</button>}
+        {esForm && <div className="experience-form">
+          <input value={esForm.question} onChange={(e) => setEsForm({ ...esForm, question: e.target.value })} placeholder="設問　例：志望動機を教えてください" />
+          <input type="number" inputMode="numeric" value={esForm.limit} onChange={(e) => setEsForm({ ...esForm, limit: e.target.value })} placeholder="文字数の上限（任意）　例：400" />
+          <AutoGrowTextarea value={esForm.answer} onChange={(e) => setEsForm({ ...esForm, answer: e.target.value })} placeholder="回答を書く（下書きでもOK）" />
+          <div className={`es-count ${esForm.limit && charCount(esForm.answer) > Number(esForm.limit) ? "over" : ""}`}>{charCount(esForm.answer)}{esForm.limit ? ` / ${esForm.limit}` : ""} 字</div>
+          <div className="experience-form-actions"><button type="button" className="secondary-button" onClick={() => setEsForm(null)}>やめる</button><button type="button" className="primary-button" onClick={saveEsForm}>{esForm.id ? "更新する" : "追加する"}</button></div>
+        </div>}
+        <div className="experience-list">
+          {esEntries.map((e) => { const n = charCount(e.answer); const over = e.limit !== null && n > e.limit; const ratio = e.limit ? Math.min(100, Math.round((n / e.limit) * 100)) : 0; return (
+            <article key={e.id} className={`experience-entry es-entry ${e.done ? "done" : ""}`}>
+              <div className="experience-entry-head"><strong>{e.question}</strong>
+                <button type="button" className="icon-button" aria-label="回答をコピー" onClick={() => copyEs(e.answer)}><Copy size={14} /></button>
+                <button type="button" className="icon-button" aria-label="編集" onClick={() => setEsForm({ id: e.id, question: e.question, answer: e.answer, limit: e.limit === null ? "" : String(e.limit) })}><Pencil size={14} /></button>
+                <button type="button" className="icon-button" aria-label="削除" onClick={() => removeEs(e.id)}><Trash2 size={14} /></button></div>
+              <p className="experience-entry-text">{e.answer || "（まだ回答がありません）"}</p>
+              {e.limit !== null && <div className="es-bar" aria-hidden><span className={over ? "over" : ""} style={{ width: `${ratio}%` }} /></div>}
+              <div className="es-foot"><span className={`es-count ${over ? "over" : ""}`}>{n}{e.limit !== null ? ` / ${e.limit}` : ""} 字{over ? `（${n - (e.limit as number)}字オーバー）` : ""}</span>
+                <button type="button" className={`es-done-chip ${e.done ? "active" : ""}`} aria-pressed={e.done} onClick={() => toggleEsDone(e.id)}><CheckCircle2 size={12} />{e.done ? "提出済み" : "下書き"}</button></div>
+            </article>); })}
+          {!esEntries.length && !esForm && <p className="child-empty-hint">まだ設問がありません。ESの設問を追加して、回答を書き溜めましょう。</p>}
+        </div>
+        <p className="company-cards-hint">追加・編集したあとは、右上の「保存する」で確定します。</p>
+      </div>
+    </div>}
     {tab === "experience" && <div className="experience-tab">
       <div className="editor-section flush">
         <h3>体験談 <span className="count-badge">{experiences.length}</span></h3>

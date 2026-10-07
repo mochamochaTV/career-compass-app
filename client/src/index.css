@@ -955,3 +955,19 @@ body { background: var(--background); color: var(--foreground); }
 .topbar > div { min-width: 0; }
 .primary-button.full-width { margin-bottom: 12px; }
 .primary-button.full-width + .chip-row, .primary-button.full-width + .segmented-tabs { margin-top: 0; }
+
+/* ESタブ */
+.es-progress{margin:8px 0 0;font-size:12px;font-weight:700;color:#6654d9}
+.es-count{font-size:12px;font-weight:700;color:#77778b;font-variant-numeric:tabular-nums}
+.es-count.over{color:#d14d4d}
+.es-bar{height:6px;border-radius:999px;background:rgba(127,127,127,.18);overflow:hidden;margin-top:8px}
+.es-bar span{display:block;height:100%;background:#6654d9;border-radius:999px}
+.es-bar span.over{background:#d14d4d}
+.es-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
+.es-done-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;border:1px solid rgba(127,127,127,.35);background:transparent;color:inherit;font-size:11px;font-weight:700;cursor:pointer}
+.es-done-chip.active{background:#e8f7f1;border-color:#bdeedb;color:#2f8a6b}
+.es-entry.done{opacity:.85}
+.dark .es-done-chip.active{background:rgba(76,170,142,.2);border-color:rgba(76,170,142,.5);color:#7fd6b8}
+.experience-entry-head .icon-button:first-of-type{margin-left:auto}
+.es-entry .experience-entry-head .icon-button:nth-of-type(2){margin-left:0}
+@media (max-width:420px){.editor-tabs button{font-size:11px;padding:9px 3px}}

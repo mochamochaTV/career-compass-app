@@ -899,3 +899,59 @@ body { background: var(--background); color: var(--foreground); }
 .dark .pay-group,.dark .industry-salary-card{border-color:rgba(255,255,255,.18);background:transparent}
 .dark .industry-salary-row input{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18);color:inherit}
 @media (max-width:420px){.pay-group-numbers{grid-template-columns:1fr}}
+
+/* ===== 見やすさの調整 ===== */
+/* 企業ページのタブ：4つが横スクロールなしで収まるように */
+.editor-tabs { width: 100%; }
+.editor-tabs button { flex: 1 1 0; justify-content: center; padding: 9px 6px; font-size: 12px; white-space: nowrap; }
+.editor-tabs button small { margin-left: 3px; padding: 1px 4px; }
+
+/* 項目ごとの「覚えた／確定」：ラベル行の右端に小さく置いて、縦の長さを減らす */
+.field-with-status { position: relative; gap: 0; }
+.field-with-status .field-status-row { position: absolute; top: -3px; right: 0; gap: 4px; }
+.field-with-status .field-status-chip { padding: 2px 7px; font-size: 9px; gap: 3px; }
+.field-with-status > label:first-child, .field-with-status > .pay-group { padding-top: 0; }
+.field-with-status > label:first-child { padding-right: 0; }
+.field-with-status .pay-group { margin-top: 18px; }
+.form-grid .field-with-status > label { gap: 4px; }
+.form-grid .field-with-status > label > :first-child:not(input):not(textarea):not(select) { margin-right: 0; }
+.form-grid .field-with-status { padding-top: 2px; }
+.form-grid textarea { min-height: 56px; }
+
+/* 紫のバナーは小さめに（情報が下に押し出されないように） */
+.summary-banner, .schedule-hero { min-height: 0; padding: 22px 26px; }
+.summary-banner { margin-top: 16px; }
+.summary-banner h2, .schedule-hero h2 { font-size: clamp(20px, 5vw, 26px); margin: 4px 0 6px; }
+.summary-banner svg, .schedule-hero svg { width: 40px; height: 40px; }
+
+/* 面接後の振り返りメモの入力欄：他の入力欄と同じ文字サイズに */
+.reflection-log-form textarea { width: 100%; padding: 10px 11px; font-size: 14px; color: #313147; background: #fbfbfe; border: 1px solid #e7e6f0; border-radius: 9px; resize: vertical; min-height: 72px; }
+.dark .reflection-log-form textarea { color: inherit; background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.18); }
+/* 予定一覧：件数行とタイムラインのすき間を詰める */
+.card-filter { margin: 4px 0 0; align-items: center; }
+.timeline { margin-top: 6px; }
+.schedule-company-filter .chip { padding: 6px 12px; font-size: 12px; }
+
+/* 面接カードのタイマー：スクロール中にカードのボタンを隠さないよう小さく・半透明に */
+.timer-toggle { padding: 6px 12px; gap: 6px; font-size: 13px; opacity: .92; box-shadow: 0 6px 14px #6654d93d; }
+.timer-toggle svg { width: 14px; height: 14px; }
+.timer-display { min-width: 40px; }
+.timer-bar { top: 8px; margin-bottom: 8px; }
+/* 予定フォーム：開始・終了時間は横に並べて縦の長さを減らす */
+@media (max-width: 760px) { .schedule-form .form-grid { grid-template-columns: 1fr 1fr; gap: 10px; } .schedule-form .form-grid .wide { grid-column: 1 / -1; } .schedule-form input[type="time"], .schedule-form input[type="date"] { min-width: 0; } }
+
+/* ===== 見やすさの調整（2回目） ===== */
+/* 空の状態：縦に伸びすぎず、アイコンを上・文章を下の中央にそろえる */
+.empty-state.large { flex-direction: column; min-height: 0; height: auto; align-self: start; padding: 28px 20px; text-align: center; line-height: 1.7; }
+/* ボタンや見出しがすぐ上下の要素にくっつく箇所に余白 */
+.segmented-tabs + .primary-button, .segmented-tabs + .secondary-button { margin-top: 14px; }
+.chip-row + .primary-button { margin-top: 12px; }
+.primary-button.wide-button, .reverse-add-button { margin-bottom: 12px; }
+.company-cards-tab .secondary-button { margin-top: 10px; }
+.company-card-sub-heading { margin: 18px 0 6px; }
+.company-cards-hint { line-height: 1.7; margin-bottom: 8px; }
+/* 長い画面タイトル（グループディスカッション等）がボタンと重ならないように */
+.topbar h1 { font-size: clamp(19px, 5.4vw, 31px); }
+.topbar > div { min-width: 0; }
+.primary-button.full-width { margin-bottom: 12px; }
+.primary-button.full-width + .chip-row, .primary-button.full-width + .segmented-tabs { margin-top: 0; }

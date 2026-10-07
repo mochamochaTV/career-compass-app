@@ -1661,7 +1661,7 @@ function ScheduleScreen({ schedule, setSchedule, companies, setCompanies, onNavi
     <div className="section-heading"><div><p className="eyebrow">タイムライン</p><h2>やることリスト</h2></div><button className="primary-button" onClick={openForm}><Plus size={17} />予定追加</button></div>
     {show && <div className="inline-form schedule-form"><div className="form-grid">
       <label className="wide">予定名<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="例：一次面接の準備" /></label>
-      <label>日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
+      <label className="wide">日付<input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
       <label>開始時間（任意）<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label>
       <label>終了時間（任意）<input type="time" value={draft.endTime} onChange={(e) => setDraft({ ...draft, endTime: e.target.value })} /></label>
       <label className="wide">開催場所（任意）<input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} placeholder="例：オンライン（Zoom） / 本社 東京都〇〇" /></label>

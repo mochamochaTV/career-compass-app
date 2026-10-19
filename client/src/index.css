@@ -1033,3 +1033,17 @@ body { background: var(--background); color: var(--foreground); }
   .practice-stats-card { margin-top: 12px; padding: 14px; }
   .practice-bar-chart { height: 72px; margin-top: 10px; }
 }
+
+/* 項目の表示順: 長押しドラッグ */
+.field-order-row { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; cursor: grab; }
+.field-order-row .field-order-label { touch-action: none; }
+.field-order-list:has(.field-order-row.dragging) { touch-action: none; }
+.field-order-row.dragging { z-index: 5; border-color: #a99bf4; background: #f1efff; box-shadow: 0 8px 20px #6654d933; transform: scale(1.03); }
+.dark .field-order-row.dragging { background: #322c5c; border-color: #6654d9; }
+
+/* 項目の追加・非表示 */
+.field-add-row { display: flex; gap: 6px; align-items: center; }
+.field-add-row input { flex: 1; min-width: 0; padding: 8px 10px; font-size: 13px; }
+.field-add-row .secondary-button { flex: none; white-space: nowrap; padding: 8px 12px; font-size: 12px; }
+.field-hidden-list { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 11px; color: #8a8aa0; }
+.field-hidden-list .chip { font-size: 11px; padding: 4px 9px; display: inline-flex; align-items: center; gap: 3px; }

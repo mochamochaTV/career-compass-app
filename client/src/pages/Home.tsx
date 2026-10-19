@@ -60,7 +60,9 @@ export type Company = {
   esEntries?: EsEntry[];
   experience?: string;
   stage?: CompanyStage; interviewLogs?: InterviewLogEntry[]; tags?: string[];
-  fieldStatus?: Partial<Record<CompanyFieldKey, FieldStatus>>;
+  fieldStatus?: Partial<Record<string, FieldStatus>>;
+  // 自分で追加した項目（cc_company_field_extra で定義）の入力値。キーは項目のid。
+  customValues?: Record<string, string>;
   // 面接カードのうち、この企業に「紐づけず」に参照だけ追加したもの（自己PRなど使いまわすカード）
   extraCardIds?: string[];
 };
@@ -106,6 +108,10 @@ export const DEFAULT_COMPANY_FIELD_ORDER: CompanyFieldKey[] = [
   "interest", "interestScore", "motivation", "strengthFit",
   "notes", "sources", "tags",
 ];
+export type CustomField = { id: string; label: string };
+export type FieldExtra = { hidden: string[]; custom: CustomField[] };
+export const FIELD_EXTRA_KEY = "cc_company_field_extra";
+const EMPTY_EXTRA: FieldExtra = { hidden: [], custom: [] };
 export type SelfRating = "excellent" | "good" | "fair" | "poor";
 // Top-level cards can be recolored (see CardColorPicker) so a long list of
 // otherwise-identical purple tiles is easier to tell apart at a glance —
@@ -260,7 +266,7 @@ function collectLocalData() {
     scheduleCategoryColors: load<ScheduleCategoryColor[]>("cc_schedule_category_colors", []),
     industrySalaries: load<IndustrySalary[]>("cc_industry_salaries", []),
     // 項目の並び順（端末間で揃える）。並び替えたことがなければ空のまま。
-    companyFieldOrder: (() => { const keys = load<string[] | null>("cc_company_field_order", null); return Array.isArray(keys) && keys.length ? [{ name: "order", keys, updatedAt: load<string>(FIELD_ORDER_AT_KEY, "") }] : []; })(),
+    companyFieldOrder: (() => { const keys = load<string[] | null>("cc_company_field_order", null); const extra = load<FieldExtra>(FIELD_EXTRA_KEY, EMPTY_EXTRA); const hasExtra = (extra.hidden?.length ?? 0) > 0 || (extra.custom?.length ?? 0) > 0; return (Array.isArray(keys) && keys.length) || hasExtra ? [{ name: "order", keys: Array.isArray(keys) ? keys : [], extra, updatedAt: load<string>(FIELD_ORDER_AT_KEY, "") }] : []; })(),
   };
 }
 const FIELD_ORDER_AT_KEY = "cc_company_field_order_at";
@@ -285,8 +291,12 @@ async function syncNow(mode: SyncMode = "merge"): Promise<SyncStatus> {
       // 万一に備えて、取り込む直前の内容を端末内に退避しておく
       try { localStorage.setItem("cc_pre_sync_backup", JSON.stringify({ at: new Date().toISOString(), data: local })); } catch { /* ignore */ }
       SYNC_FIELDS.forEach((f) => { if (f !== "companyFieldOrder") localStorage.setItem(BACKUP_FIELD_KEYS[f], JSON.stringify(res.merged[f] ?? [])); });
-      const ord = (res.merged.companyFieldOrder?.[0] ?? null) as { keys?: unknown; updatedAt?: string } | null;
-      if (ord && Array.isArray(ord.keys)) { localStorage.setItem("cc_company_field_order", JSON.stringify(ord.keys)); localStorage.setItem(FIELD_ORDER_AT_KEY, JSON.stringify(ord.updatedAt ?? "")); }
+      const ord = (res.merged.companyFieldOrder?.[0] ?? null) as { keys?: unknown; extra?: FieldExtra; updatedAt?: string } | null;
+      if (ord && Array.isArray(ord.keys)) {
+        if (ord.keys.length) localStorage.setItem("cc_company_field_order", JSON.stringify(ord.keys));
+        localStorage.setItem(FIELD_EXTRA_KEY, JSON.stringify(ord.extra ?? EMPTY_EXTRA));
+        localStorage.setItem(FIELD_ORDER_AT_KEY, JSON.stringify(ord.updatedAt ?? ""));
+      }
       window.dispatchEvent(new Event("cc-data-replaced"));
     }
     localStorage.setItem(SYNC_BASE_KEY, JSON.stringify(res.merged));
@@ -681,24 +691,92 @@ function renderCompanyField(key: CompanyFieldKey, draft: Company, update: (key: 
 // cc_company_field_order) and used for every company, not just this one.
 // Used to be press-and-drag; ↑↓ buttons replaced that (see moveItem) because
 // drag kept misfiring — a tap always lands.
-function FieldOrderManager({ order, onChange, onClose }: { order: CompanyFieldKey[]; onChange: (order: CompanyFieldKey[]) => void; onClose: () => void }) {
+function FieldOrderManager({ order, extra, onChange, onClose }: { order: string[]; extra: FieldExtra; onChange: (order: string[], extra?: FieldExtra) => void; onClose: () => void }) {
+  const labelOf = (key: string) => (COMPANY_FIELD_LABELS as Record<string, string>)[key] ?? extra.custom.find((c) => `custom:${c.id}` === key)?.label ?? key;
+  const [newLabel, setNewLabel] = useState("");
+  const addCustom = () => {
+    const label = newLabel.trim();
+    if (!label) return;
+    const id = `f${Date.now().toString(36)}`;
+    onChange([...order, `custom:${id}`], { ...extra, custom: [...extra.custom, { id, label }] });
+    setNewLabel("");
+  };
+  const removeField = (key: string) => {
+    if (key.startsWith("custom:")) {
+      if (!window.confirm(`項目「${labelOf(key)}」を削除しますか？すべての企業のこの項目の入力内容が見えなくなります。`)) return;
+      onChange(order.filter((k) => k !== key), { ...extra, custom: extra.custom.filter((c) => `custom:${c.id}` !== key) });
+    } else {
+      onChange(order.filter((k) => k !== key), { ...extra, hidden: [...extra.hidden, key] });
+    }
+  };
+  const restoreField = (key: string) => onChange([...order, key], { ...extra, hidden: extra.hidden.filter((k) => k !== key) });
   // すべての項目を1画面で見渡せるよう、2列に並べて（上から下へ、左→右の順）スクロールなしで表示する。
   const rows = Math.ceil(order.length / 2);
+  // 長押しでドラッグして並べ替え（カテゴリのチップと同じ方式）。矢印ボタンも残してある。
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ key: string; pointerId: number; startX: number; startY: number; timer: ReturnType<typeof setTimeout> | null; dragging: boolean } | null>(null);
+  const liveOrderRef = useRef<string[]>(order);
+  liveOrderRef.current = dragRef.current?.dragging ? liveOrderRef.current : order;
+  const startDrag = (key: string, event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    const pointerId = event.pointerId;
+    const timer = setTimeout(() => {
+      const st = dragRef.current;
+      if (!st) return;
+      st.dragging = true;
+      liveOrderRef.current = [...order];
+      setDraggingKey(key);
+      try { listRef.current?.setPointerCapture(pointerId); } catch { /* ignore */ }
+      try { navigator.vibrate?.(15); } catch { /* ignore */ }
+    }, LONG_PRESS_MS);
+    dragRef.current = { key, pointerId, startX: event.clientX, startY: event.clientY, timer, dragging: false };
+  };
+  const moveDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const st = dragRef.current;
+    if (!st) return;
+    if (!st.dragging) {
+      if (Math.hypot(event.clientX - st.startX, event.clientY - st.startY) > 10) { if (st.timer) clearTimeout(st.timer); dragRef.current = null; }
+      return;
+    }
+    event.preventDefault();
+    const items = Array.from(listRef.current?.querySelectorAll<HTMLElement>(".field-order-row") ?? []);
+    let closest = -1; let best = Infinity;
+    items.forEach((el, i) => { const r = el.getBoundingClientRect(); const d = Math.hypot(event.clientX - (r.left + r.width / 2), event.clientY - (r.top + r.height / 2)); if (d < best) { best = d; closest = i; } });
+    const cur = liveOrderRef.current;
+    const from = cur.indexOf(st.key);
+    if (from === -1 || closest === -1 || closest === from) return;
+    const next = [...cur]; next.splice(from, 1); next.splice(closest, 0, st.key);
+    liveOrderRef.current = next;
+    onChange(next);
+  };
+  const endDrag = () => {
+    const st = dragRef.current;
+    if (st?.timer) clearTimeout(st.timer);
+    dragRef.current = null;
+    setDraggingKey(null);
+  };
   return <div className="modal-backdrop" onClick={onClose}>
     <section className="editor-modal field-order-modal" onClick={(event) => event.stopPropagation()}>
       <div className="modal-header"><div><p className="eyebrow">企業研究</p><h2>項目の表示順</h2></div><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={19} /></button></div>
-      <p className="category-manager-hint">↑↓で順番を変えます。左の列の上から順に、右の列へ続きます。すべての企業に共通です（企業名は常に先頭）。</p>
-      <div className="field-order-list" style={{ gridTemplateRows: `repeat(${rows}, auto)` }}>
-        {order.map((key, index) => <div key={key} className="field-order-row">
+      <p className="category-manager-hint">項目を長押ししてドラッグするか、↑↓で順番を変えます。×で項目を外せます（標準の項目は非表示になり、下から戻せます）。左の列の上から順に、右の列へ続きます。すべての企業に共通です（企業名は常に先頭）。</p>
+      <div className="field-order-list" ref={listRef} style={{ gridTemplateRows: `repeat(${rows}, auto)` }} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onContextMenu={(e) => e.preventDefault()}>
+        {order.map((key, index) => <div key={key} className={`field-order-row ${draggingKey === key ? "dragging" : ""}`} onPointerDown={(e) => startDrag(key, e)}>
           <span className="field-order-index">{index + 1}</span>
-          <span className="field-order-label">{COMPANY_FIELD_LABELS[key]}</span>
+          <span className="field-order-label">{labelOf(key)}</span>
           <div className="field-order-buttons">
-            <button className="order-step-button" aria-label={`${COMPANY_FIELD_LABELS[key]}を上に移動`} disabled={index === 0} onClick={() => onChange(moveItem(order, index, -1))}><ChevronUp size={14} /></button>
-            <button className="order-step-button" aria-label={`${COMPANY_FIELD_LABELS[key]}を下に移動`} disabled={index === order.length - 1} onClick={() => onChange(moveItem(order, index, 1))}><ChevronDown size={14} /></button>
+            <button className="order-step-button" aria-label={`${labelOf(key)}を上に移動`} disabled={index === 0} onClick={() => onChange(moveItem(order, index, -1))}><ChevronUp size={14} /></button>
+            <button className="order-step-button" aria-label={`${labelOf(key)}を下に移動`} disabled={index === order.length - 1} onClick={() => onChange(moveItem(order, index, 1))}><ChevronDown size={14} /></button>
+            <button className="order-step-button" aria-label={`${labelOf(key)}を${key.startsWith("custom:") ? "削除" : "非表示に"}`} onClick={() => removeField(key)}><X size={14} /></button>
           </div>
         </div>)}
       </div>
-      <div className="modal-footer"><button className="secondary-button" onClick={() => { if (window.confirm("項目の並びを、最初の並び順に戻しますか？")) onChange([...DEFAULT_COMPANY_FIELD_ORDER]); }}><RotateCcw size={15} />最初の並びに戻す</button><button className="primary-button" onClick={onClose}><Check size={16} />完了</button></div>
+      <form className="field-add-row" onSubmit={(e) => { e.preventDefault(); addCustom(); }}>
+        <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="新しい項目の名前（例：インターンの有無）" maxLength={40} />
+        <button type="submit" className="secondary-button" disabled={!newLabel.trim()}><Plus size={14} />項目を追加</button>
+      </form>
+      {extra.hidden.length > 0 && <div className="field-hidden-list"><span>非表示の項目：</span>{extra.hidden.map((key) => <button key={key} type="button" className="chip" onClick={() => restoreField(key)}><Plus size={11} />{labelOf(key)}</button>)}</div>}
+      <div className="modal-footer"><button className="secondary-button" onClick={() => { if (window.confirm("項目の並びを最初の状態に戻し、非表示の項目も表示します。追加した項目は残ります。よろしいですか？")) onChange([...DEFAULT_COMPANY_FIELD_ORDER, ...extra.custom.map((c) => `custom:${c.id}`)], { ...extra, hidden: [] }); }}><RotateCcw size={15} />最初の並びに戻す</button><button className="primary-button" onClick={onClose}><Check size={16} />完了</button></div>
     </section>
   </div>;
 }
@@ -719,7 +797,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   // starts at false until first touched, so existing companies (no
   // fieldStatus saved yet) just read as "not memorized, not confirmed" for
   // every field rather than needing a migration.
-  const setFieldStatus = (key: CompanyFieldKey, patch: Partial<FieldStatus>) => setDraft((d) => ({
+  const setFieldStatus = (key: string, patch: Partial<FieldStatus>) => setDraft((d) => ({
     ...d,
     fieldStatus: { ...d.fieldStatus, [key]: { memorized: false, confirmed: false, ...d.fieldStatus?.[key], ...patch } },
   }));
@@ -729,11 +807,16 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   const [fieldOrder, setFieldOrder] = usePersisted<CompanyFieldKey[]>("cc_company_field_order", DEFAULT_COMPANY_FIELD_ORDER);
   // 旧版の「初任給」「平均年収」「給与・諸手当＋残業代の制度」は「給与」1項目にまとめる（いちばん上にあった位置を引き継ぐ）
   const migratedOrder = Array.from(new Set((fieldOrder as string[]).map((k) => (k === "startingSalary" || k === "avgSalaryGraduate" || k === "payOvertimeSystem" ? "pay" : k)))) as CompanyFieldKey[];
-  const normalizedFieldOrder = [...migratedOrder.filter((k) => DEFAULT_COMPANY_FIELD_ORDER.includes(k)), ...DEFAULT_COMPANY_FIELD_ORDER.filter((k) => !migratedOrder.includes(k))];
+  const [fieldExtra, setFieldExtra] = usePersisted<FieldExtra>(FIELD_EXTRA_KEY, EMPTY_EXTRA);
+  const extra: FieldExtra = { hidden: fieldExtra?.hidden ?? [], custom: fieldExtra?.custom ?? [] };
+  const allFieldKeys: string[] = [...DEFAULT_COMPANY_FIELD_ORDER, ...extra.custom.map((c) => `custom:${c.id}`)];
+  const visibleKeys = allFieldKeys.filter((k) => !extra.hidden.includes(k));
+  const normalizedFieldOrder: string[] = [...(migratedOrder as string[]).filter((k) => visibleKeys.includes(k)), ...visibleKeys.filter((k) => !(migratedOrder as string[]).includes(k))];
   const [reorderingFields, setReorderingFields] = useState(false);
   // 基本情報が長いので、入力済みの項目だけに絞って読みやすくできる（端末に記憶）
   const [onlyFilled, setOnlyFilled] = usePersisted<boolean>("cc_company_only_filled", false);
-  const fieldHasValue = (key: CompanyFieldKey): boolean => {
+  const fieldHasValue = (key: string): boolean => {
+    if (key.startsWith("custom:")) return !!draft.customValues?.[key.slice(7)]?.trim();
     if (key === "interest") return true;
     if (key === "pay") return draft.startingSalary != null || draft.avgSalaryGraduate != null || !!draft.payOvertimeSystem?.trim();
     const v = (draft as unknown as Record<string, unknown>)[key];
@@ -836,7 +919,10 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
       <span>入力済み {filledCount} / {normalizedFieldOrder.length - 1}</span>
     </div>}
     {tab === "basic" && <div className="form-grid"><label>企業名<input value={draft.name} onChange={(e) => update("name", e.target.value)} /></label>{shownFields.map((key) => {
-      const field = renderCompanyField(key, draft, update);
+      const customDef = key.startsWith("custom:") ? extra.custom.find((c) => `custom:${c.id}` === key) : undefined;
+      const field = customDef
+        ? <label key={key} className="wide">{customDef.label}<AutoGrowTextarea value={draft.customValues?.[customDef.id] ?? ""} onChange={(e) => setDraft((d) => ({ ...d, customValues: { ...d.customValues, [customDef.id]: e.target.value } }))} /></label>
+        : renderCompanyField(key as CompanyFieldKey, draft, update);
       const isWide = typeof field.props.className === "string" && field.props.className.includes("wide");
       const status = draft.fieldStatus?.[key];
       return <div key={key} className={`field-with-status ${isWide ? "wide" : ""}`}>
@@ -960,7 +1046,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
     <div className="company-page-footer"><button className="danger-button" onClick={() => { if (window.confirm(`「${draft.name}」を削除しますか？この操作は取り消せません。`)) onDelete(); }}><Trash2 size={16} />この企業を削除</button></div>
     </section>
   </div>
-  {reorderingFields && <FieldOrderManager order={normalizedFieldOrder} onChange={(order) => { setFieldOrder(order); try { localStorage.setItem(FIELD_ORDER_AT_KEY, JSON.stringify(new Date().toISOString())); } catch { /* ignore */ } }} onClose={() => setReorderingFields(false)} />}
+  {reorderingFields && <FieldOrderManager order={normalizedFieldOrder} extra={extra} onChange={(order, nextExtra) => { setFieldOrder(order as CompanyFieldKey[]); if (nextExtra) setFieldExtra(nextExtra); try { localStorage.setItem(FIELD_ORDER_AT_KEY, JSON.stringify(new Date().toISOString())); } catch { /* ignore */ } }} onClose={() => setReorderingFields(false)} />}
   {pickingCards && <CardPickerModal cards={cards} excludeIds={[...linkedCards.map((c) => c.id), ...(draft.extraCardIds ?? [])]} companies={companies} onClose={() => setPickingCards(false)} onAdd={(ids) => { update("extraCardIds", [...(draft.extraCardIds ?? []), ...ids]); setPickingCards(false); toast.success(`${ids.length}枚を追加しました（保存で反映）`); }} />}
   </>;
 }

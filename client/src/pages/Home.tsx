@@ -612,6 +612,7 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
         {sorted.map((c, i) => { const filled = hasRankValue(c); const firstBlank = !filled && (i === 0 || hasRankValue(sorted[i - 1])); return <Fragment key={c.id}>
           {firstBlank && <p className="ranking-blank-title">未入力（{sorted.filter((x) => !hasRankValue(x)).length}社）</p>}
           <div className={`ranking-row ${filled ? "" : "unranked"}`}>
+          {filled && rank !== "benefits" && <span className="rank-bar" aria-hidden><span style={{ width: `${Math.max(4, Math.round(((rankValue(c) as number) / Math.max(1, ...sorted.map((x) => rankValue(x) ?? 0))) * 100))}%` }} /></span>}
           <div className={`rank-number ${filled ? `rank-${i + 1}` : "rank-none"}`}>{filled ? i + 1 : "–"}</div><div className="company-avatar small">{c.name.slice(0, 1)}</div><button className="ranking-info" onClick={() => openCompany(c)}><strong>{c.name}</strong><span>{c.industry} · {c.location}</span></button><div className="ranking-value"><small>{rank === "interest" ? "志望度スコア" : rank === "salary" ? "平均年収" : "福利厚生"}</small><strong>{!filled ? "未入力" : rank === "interest" ? `${c.interestScore}点` : rank === "salary" ? money(c.avgSalaryGraduate) : "登録済み"}</strong>{rank === "interest" && <small>★ {c.interest}/5</small>}</div>
         </div></Fragment>; })}
         {!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}

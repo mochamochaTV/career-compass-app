@@ -1073,3 +1073,11 @@ body { background: var(--background); color: var(--foreground); }
 .rank-number.rank-none { background: #eeeef5; color: #a0a0b4; }
 .dark .rank-number.rank-none { background: #2c2a44; color: #8a88a8; }
 .ranking-value small + strong + small, .ranking-value strong + small { display: block; font-size: 10px; color: #9999aa; }
+.ranking-row { position: relative; }
+.ranking-value { min-width: 84px; text-align: right; }
+.ranking-value > strong { display: block; font-size: 20px; line-height: 1.15; color: #6654d9; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.ranking-row.unranked .ranking-value > strong { font-size: 13px; color: #a0a0b4; font-weight: 600; }
+.ranking-value > small:first-child { display: block; font-size: 10px; color: #8a8aa0; }
+.rank-bar { position: absolute; left: 14px; right: 14px; bottom: 5px; height: 3px; border-radius: 3px; background: rgba(127,127,127,.14); overflow: hidden; pointer-events: none; }
+.rank-bar > span { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #a99bf4, #6654d9); }
+.dark .ranking-value > strong { color: #b9b0ff; }

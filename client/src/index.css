@@ -1047,3 +1047,29 @@ body { background: var(--background); color: var(--foreground); }
 .field-add-row .secondary-button { flex: none; white-space: nowrap; padding: 8px 12px; font-size: 12px; }
 .field-hidden-list { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 11px; color: #8a8aa0; }
 .field-hidden-list .chip { font-size: 11px; padding: 4px 9px; display: inline-flex; align-items: center; gap: 3px; }
+
+/* 採用情報タブ・選考フロー */
+.recruit-tab .editor-section{margin-top:16px}
+.flow-list{list-style:none;margin:12px 0;padding:0;display:grid;gap:0}
+.flow-step{display:grid;justify-items:center}
+.flow-node{width:100%;display:grid;gap:6px;padding:12px;border:1px solid #e3e1f1;border-left:4px solid #cfc8f7;border-radius:14px;background:#fff}
+.flow-step.current .flow-node{border-left-color:#6654d9;box-shadow:0 4px 14px #6654d924}
+.flow-step.done .flow-node{border-left-color:#4caa8e;background:#f6fcf9}
+.flow-node-head{display:flex;align-items:center;gap:8px}
+.flow-num{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#efedff;color:#6654d9;font-size:12px;font-weight:700}
+.flow-step.done .flow-num{background:#dff3ec;color:#2f8a6b}
+.flow-name{flex:1;min-width:0;font-weight:700;font-size:14px;padding:6px 8px}
+.flow-date{font-size:12px;padding:6px 8px}
+.flow-actions{display:flex;gap:4px;justify-content:flex-end}
+.flow-arrow{display:grid;place-items:center;height:24px;color:#b3acec}
+.dark .flow-node{background:#25233a;border-color:#3a3760;border-left-color:#5a4fb5}
+.dark .flow-step.done .flow-node{background:#1f3330;border-left-color:#4caa8e}
+.dark .flow-num{background:#34305c;color:#b9b0ff}
+.dark .flow-step.done .flow-num{background:#25483f;color:#7fd6b8}
+
+/* ランキング：未入力は下にまとめる */
+.ranking-blank-title { margin: 14px 4px 4px; font-size: 12px; font-weight: 700; color: #8a8aa0; }
+.ranking-row.unranked { opacity: .65; }
+.rank-number.rank-none { background: #eeeef5; color: #a0a0b4; }
+.dark .rank-number.rank-none { background: #2c2a44; color: #8a88a8; }
+.ranking-value small + strong + small, .ranking-value strong + small { display: block; font-size: 10px; color: #9999aa; }

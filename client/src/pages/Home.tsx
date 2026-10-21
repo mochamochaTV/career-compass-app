@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Fragment, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { strToU8 } from "fflate";
 import {
   AlertCircle, ArrowLeft, ArrowUpDown, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
@@ -58,6 +58,9 @@ export type Company = {
   motivation?: string;
   // ES（エントリーシート）：設問ごとの回答・文字数上限・提出状況。
   esEntries?: EsEntry[];
+  // 採用情報タブ：採用人数・日程などの概要と、選考フロー（フローチャート表示）。
+  recruit?: RecruitInfo;
+  flow?: FlowStep[];
   experience?: string;
   stage?: CompanyStage; interviewLogs?: InterviewLogEntry[]; tags?: string[];
   fieldStatus?: Partial<Record<string, FieldStatus>>;
@@ -73,6 +76,9 @@ export type Company = {
 // company. 企業名 isn't here: it's the editor's own title, always first.
 export type EsEntry = { id: string; question: string; answer: string; limit: number | null; done: boolean; updatedAt: string };
 const charCount = (t: string) => Array.from(t.replace(/\s+$/g, "")).length;
+export type RecruitInfo = { headcount: string; roles: string; deadline: string; schedule: string; requirements: string; url: string };
+export type FlowStep = { id: string; name: string; date: string; note: string; done: boolean };
+const DEFAULT_FLOW_STEPS = ["エントリー・ES提出", "Webテスト", "1次面接", "2次面接", "最終面接", "内定"];
 export type ExperienceKind = "employee" | "student" | "selection" | "other";
 export type ExperienceEntry = { id: string; kind: ExperienceKind; title: string; text: string; source: string; createdAt: string };
 const EXPERIENCE_KINDS: { key: ExperienceKind; label: string }[] = [
@@ -103,7 +109,7 @@ export const DEFAULT_COMPANY_FIELD_ORDER: CompanyFieldKey[] = [
   "companyOverview", "philosophy", "founded", "capital", "industry", "employeeCount", "avgAge", "location",
   "business", "customers", "competitiveEdge", "revenue",
   "programs", "benefits", "pay", "workHoursHolidays", "holidays",
-  "recruitingInfo", "annualHiringTrend",
+  "annualHiringTrend",
   "person", "outlook",
   "interest", "interestScore", "motivation", "strengthFit",
   "notes", "sources", "tags",
@@ -305,6 +311,7 @@ async function syncNow(mode: SyncMode = "merge"): Promise<SyncStatus> {
     return finish(false, e instanceof SyncError ? e.message : "同期に失敗しました。時間をおいてもう一度お試しください");
   } finally { syncInFlight = false; }
 }
+const isBlankText = (t: string | undefined) => { const v = (t ?? "").trim(); return !v || v === "情報を追加" || v === "調査して追記"; };
 function money(value: number | null) { return value ? `${value.toLocaleString()}万円` : "未入力"; }
 // Swaps an item with its neighbor one slot up or down — the shared step
 // behind every ↑↓ reorder button in this file (company list, ranking board,
@@ -458,7 +465,6 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
   // render and silently undo the drag the instant it happened, which is
   // why reordering there looked like it "didn't work" at all. Switching
   // rank tabs clears it, since a different criterion means a fresh order.
-  const [manualOrder, setManualOrder] = useState<string[] | null>(null);
   const [industry, setIndustry] = useState("すべて");
   const [industrySalaries, setIndustrySalaries] = usePersisted<IndustrySalary[]>("cc_industry_salaries", []);
   // Kept separate from newCompanyName below — one text field used to double
@@ -482,11 +488,18 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
   const industries = ["すべて", ...Array.from(new Set(companies.map((c) => c.industry)))];
   const allTags = Array.from(new Set(companies.flatMap((c) => c.tags ?? [])));
   const filtered = companies.filter((c) => (industry === "すべて" || c.industry === industry) && (tagFilter === "すべて" || (c.tags ?? []).includes(tagFilter)) && c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  const autoSorted = [...filtered].sort((a, b) => rank === "interest" || rank === "compare" ? b.interest - a.interest : rank === "salary" ? (b.avgSalaryGraduate ?? -1) - (a.avgSalaryGraduate ?? -1) : b.benefits.length - a.benefits.length);
-  // Apply any manual drag order first, then fall back to the automatic sort
-  // for companies that aren't part of it yet (newly added, or newly matching
-  // the current filter) so they still show up rather than vanishing.
-  const sorted = manualOrder ? [...manualOrder.map((id) => filtered.find((c) => c.id === id)).filter((c): c is Company => !!c), ...autoSorted.filter((c) => !manualOrder.includes(c.id))] : autoSorted;
+  // 並び順は入力された値から自動で決まる（手動では動かせない）。
+  // 値が未入力の企業は最下位にまとめる。志望度は「志望度スコア」の高い順（同点は★の多い順）。
+  const rankValue = (c: Company): number | null => rank === "salary" ? c.avgSalaryGraduate
+    : rank === "benefits" ? (isBlankText(c.benefits) ? null : c.benefits.length)
+    : c.interestScore;
+  const hasRankValue = (c: Company) => rankValue(c) !== null && rankValue(c) !== undefined;
+  const sorted = [...filtered].sort((a, b) => {
+    const ha = hasRankValue(a), hb = hasRankValue(b);
+    if (ha !== hb) return ha ? -1 : 1;
+    if (ha && hb) { const d = (rankValue(b) as number) - (rankValue(a) as number); if (d) return d; }
+    return b.interest - a.interest;
+  });
 
   const add = () => { const name = newCompanyName.trim(); if (!name) return toast.error("企業名を入力してください"); const company: Company = { id: `company-${Date.now()}`, name, industry: newIndustry, interest: 3, interestScore: null, startingSalary: null, avgSalaryGraduate: null, business: "", strengthFit: "", benefits: "調査して追記", holidays: "", employeeVoice: "", studentVoice: "", location: "未入力", philosophy: "", person: "", notes: "調べた情報をここに整理", sources: [`https://www.google.com/search?q=${encodeURIComponent(`${name} 採用 公式`)}`], updatedAt: today, stage: "未応募", interviewLogs: [], companyOverview: "", founded: "", capital: "", employeeCount: "", avgAge: "", programs: "", payOvertimeSystem: "", workHoursHolidays: "", industryAvgSalary: "", revenue: "", customers: "", competitiveEdge: "", outlook: "", recruitingInfo: "", annualHiringTrend: "" }; setCompanies((current) => [...current, company]); setNewCompanyName(""); openCompany(company); toast.success(`${name}を追加しました`); };
   const save = (updated: Company) => { setCompanies((current) => current.map((c) => c.id === updated.id ? { ...updated, updatedAt: today } : c)); setSelected({ ...updated, updatedAt: today }); toast.success("企業情報を保存しました"); };
@@ -505,11 +518,6 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
       return current.map((c) => (visibleSet.has(c.id) ? byId.get(visibleIds[cursor++])! : c));
     });
   };
-  // The ranking board additionally needs to remember the drag result as an
-  // explicit override (see `manualOrder` above), or the next render's
-  // auto-sort would immediately erase it.
-  const reorderRanking = (visibleIds: string[]) => { setManualOrder(visibleIds); reorderCompanies(visibleIds); };
-
   if (selected) return <CompanyEditor key={selected.id} company={selected} companies={companies} cards={cards} schedule={schedule} onClose={closeCompany} onSave={save} onDelete={() => { setCompanies((c) => c.filter((x) => x.id !== selected.id)); closeCompany(); toast.success("企業を削除しました"); }} />;
 
   return <div className="screen">
@@ -582,7 +590,7 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
     </> : <>
       <section className="summary-banner"><div><p className="eyebrow light">ランキング</p><h2>企業を比べて、<br />志望度を整理する</h2><p>ランキングは志望度などから自動で並び替え、↑↓ボタンで自分の順位に調整できます。</p></div><Trophy size={54} strokeWidth={1.5} /></section>
       <div className="chip-row">{industries.map((item) => <button key={item} className={`chip ${industry === item ? "selected" : ""}`} onClick={() => setIndustry(item)}>{item}</button>)}</div>
-      <div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => { setRank("interest"); setManualOrder(null); }}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => { setRank("salary"); setManualOrder(null); }}><span className="yen-icon">¥</span>平均年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => { setRank("benefits"); setManualOrder(null); }}><span>＋</span>福利厚生</button><button className={rank === "compare" ? "active" : ""} onClick={() => { setRank("compare"); setManualOrder(null); }}><span>▦</span>比較表</button></div>
+      <div className="rank-tabs"><button className={rank === "interest" ? "active" : ""} onClick={() => { setRank("interest"); }}><Trophy size={16} />志望度</button><button className={rank === "salary" ? "active" : ""} onClick={() => { setRank("salary"); }}><span className="yen-icon">¥</span>平均年収</button><button className={rank === "benefits" ? "active" : ""} onClick={() => { setRank("benefits"); }}><span>＋</span>福利厚生</button><button className={rank === "compare" ? "active" : ""} onClick={() => { setRank("compare"); }}><span>▦</span>比較表</button></div>
       {rank === "salary" && <section className="industry-salary-card">
         <h3>業界の平均年収</h3>
         <p>業界ごとに1つ。自由に書き換えられます（例：600万円）。</p>
@@ -599,15 +607,13 @@ function ResearchScreen({ companies, setCompanies, cards, schedule, onNavigate }
         {sorted.map((c) => <tr key={c.id}><th><button className="compare-name" onClick={() => openCompany(c)}>{c.name}<small>{c.industry}</small></button></th><td>{"★".repeat(c.interest)}<span className="compare-dim">{"☆".repeat(5 - c.interest)}</span></td><td>{c.stage ?? "未応募"}</td><td>{c.startingSalary ? `${c.startingSalary}万円` : "–"}</td><td>{c.avgSalaryGraduate ? `${c.avgSalaryGraduate}万円` : "–"}</td><td>{c.location || "–"}</td><td className="compare-text">{c.holidays?.trim() || "–"}</td></tr>)}
       </tbody></table></div>{!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}<p className="company-cards-hint">企業名をタップすると詳細を開けます。左右にスクロールできます。</p></div>}
       {rank !== "compare" && <>
-      <div className="card-filter"><span className="hint"><ChevronUp size={14} />↑↓ボタンで並び替え</span></div>
+      <div className="card-filter"><span className="hint">{rank === "interest" ? "志望度スコアの高い順に自動で並びます" : rank === "salary" ? "平均年収の高い順に自動で並びます" : "福利厚生の記入量が多い順に自動で並びます"}。未入力の企業は下にまとまります。</span></div>
       <div className="ranking-list">
-        {sorted.map((c, i) => <div key={c.id} className="ranking-row">
-          <div className={`rank-number rank-${i + 1}`}>{i + 1}</div><div className="company-avatar small">{c.name.slice(0, 1)}</div><button className="ranking-info" onClick={() => openCompany(c)}><strong>{c.name}</strong><span>{c.industry} · {c.location}</span></button><div className="ranking-value"><small>{rank === "interest" ? "志望度" : rank === "salary" ? "平均年収" : "福利厚生"}</small><strong>{rank === "interest" ? `★ ${c.interest}/5` : rank === "salary" ? money(c.avgSalaryGraduate) : c.benefits === "情報を追加" ? "未入力" : "登録済み"}</strong></div>
-          <div className="card-order-buttons-col">
-            <button className="order-step-button" aria-label="上に移動" disabled={i === 0} onClick={() => reorderRanking(moveItem(sorted.map((x) => x.id), i, -1))}><ChevronUp size={14} /></button>
-            <button className="order-step-button" aria-label="下に移動" disabled={i === sorted.length - 1} onClick={() => reorderRanking(moveItem(sorted.map((x) => x.id), i, 1))}><ChevronDown size={14} /></button>
-          </div>
-        </div>)}
+        {sorted.map((c, i) => { const filled = hasRankValue(c); const firstBlank = !filled && (i === 0 || hasRankValue(sorted[i - 1])); return <Fragment key={c.id}>
+          {firstBlank && <p className="ranking-blank-title">未入力（{sorted.filter((x) => !hasRankValue(x)).length}社）</p>}
+          <div className={`ranking-row ${filled ? "" : "unranked"}`}>
+          <div className={`rank-number ${filled ? `rank-${i + 1}` : "rank-none"}`}>{filled ? i + 1 : "–"}</div><div className="company-avatar small">{c.name.slice(0, 1)}</div><button className="ranking-info" onClick={() => openCompany(c)}><strong>{c.name}</strong><span>{c.industry} · {c.location}</span></button><div className="ranking-value"><small>{rank === "interest" ? "志望度スコア" : rank === "salary" ? "平均年収" : "福利厚生"}</small><strong>{!filled ? "未入力" : rank === "interest" ? `${c.interestScore}点` : rank === "salary" ? money(c.avgSalaryGraduate) : "登録済み"}</strong>{rank === "interest" && <small>★ {c.interest}/5</small>}</div>
+        </div></Fragment>; })}
         {!sorted.length && <div className="empty-state large"><BriefcaseBusiness size={24} />「調べる」から企業を追加してください。</div>}
       </div>
       </>}
@@ -787,7 +793,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
   // added on top of the original basic-info form — enough that it read as
   // one long wall of fields. Splitting it into tabs means only one section's
   // worth of controls is visible at a time.
-  const [tab, setTab] = useState<"basic" | "progress" | "cards" | "experience" | "es">("basic");
+  const [tab, setTab] = useState<"basic" | "progress" | "cards" | "experience" | "es" | "recruit">("basic");
   // The stage row only exists in the DOM once the 進捗・メモ tab is actually
   // shown, so re-measure whenever `tab` changes rather than just once on
   // mount (when this element isn't rendered yet).
@@ -834,6 +840,15 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
     setDraft((d) => ({ ...d, interviewLogs: [entry, ...(d.interviewLogs ?? [])] }));
     setLogDraft({ date: today, note: "" });
   };
+  const recruit: RecruitInfo = { headcount: "", roles: "", deadline: "", schedule: "", requirements: "", url: "", ...draft.recruit };
+  const setRecruit = (patch: Partial<RecruitInfo>) => setDraft((d) => ({ ...d, recruit: { headcount: "", roles: "", deadline: "", schedule: "", requirements: "", url: "", ...d.recruit, ...patch } }));
+  const flow = draft.flow ?? [];
+  const setFlow = (next: FlowStep[]) => setDraft((d) => ({ ...d, flow: next }));
+  const patchStep = (id: string, patch: Partial<FlowStep>) => setFlow(flow.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  const [newStep, setNewStep] = useState("");
+  const addStep = (name: string) => { const n = name.trim(); if (!n) return; setFlow([...flow, { id: `step-${Date.now()}-${flow.length}`, name: n, date: "", note: "", done: false }]); setNewStep(""); };
+  const useFlowTemplate = () => setFlow(DEFAULT_FLOW_STEPS.map((n, i) => ({ id: `step-${Date.now()}-${i}`, name: n, date: "", note: "", done: false })));
+  const recruitFilled = flow.length + Object.values(recruit).filter((v) => v.trim()).length + (draft.recruitingInfo?.trim() ? 1 : 0);
   const experiences = draft.experiences ?? [];
   const [expFilter, setExpFilter] = useState<"all" | ExperienceKind>("all");
   const [expForm, setExpForm] = useState<{ id: string | null; kind: ExperienceKind; title: string; text: string; source: string } | null>(null);
@@ -912,6 +927,7 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
       <button className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>紐づくカード{linkedCards.length > 0 && <small>{linkedCards.length}</small>}</button>
       <button className={tab === "experience" ? "active" : ""} onClick={() => setTab("experience")}>体験談{experiences.length > 0 && <small>{experiences.length}</small>}</button>
       <button className={tab === "es" ? "active" : ""} onClick={() => setTab("es")}>ES{esEntries.length > 0 && <small>{esEntries.length}</small>}</button>
+      <button className={tab === "recruit" ? "active" : ""} onClick={() => setTab("recruit")}>採用情報{flow.length > 0 && <small>{flow.length}</small>}</button>
     </div>{tabsHint.hint && <ChevronRight size={13} className="scroll-hint-icon" />}</div>
     {tab === "basic" && <div className="basic-view-toggle" role="group" aria-label="表示する項目">
       <button type="button" className={!onlyFilled ? "active" : ""} onClick={() => setOnlyFilled(false)}>すべての項目</button>
@@ -961,6 +977,51 @@ function CompanyEditor({ company, companies, cards, schedule, onClose, onSave, o
         </div>
       </div>
     </>}
+    {tab === "recruit" && <div className="recruit-tab">
+      <div className="editor-section flush">
+        <h3>採用の概要</h3>
+        <p className="company-cards-hint">採用人数や日程など、募集に関することをまとめておけます。</p>
+        <div className="form-grid">
+          <label>採用人数<input value={recruit.headcount} onChange={(e) => setRecruit({ headcount: e.target.value })} placeholder="例：技術職 約30名" /></label>
+          <label>応募締切<input value={recruit.deadline} onChange={(e) => setRecruit({ deadline: e.target.value })} placeholder="例：11/30 正午" /></label>
+          <label className="wide">募集職種<AutoGrowTextarea value={recruit.roles} onChange={(e) => setRecruit({ roles: e.target.value })} placeholder="例：ゲームプログラマー、エンジニア（開発）" /></label>
+          <label className="wide">日程（説明会・面接・内定など）<AutoGrowTextarea value={recruit.schedule} onChange={(e) => setRecruit({ schedule: e.target.value })} placeholder="例：説明会 10/25、ES締切 11/30、一次面接 12月上旬" /></label>
+          <label className="wide">応募資格・条件<AutoGrowTextarea value={recruit.requirements} onChange={(e) => setRecruit({ requirements: e.target.value })} placeholder="学部・学科、卒業見込み、必要なスキルなど" /></label>
+          <label className="wide">募集要項のURL<input value={recruit.url} onChange={(e) => setRecruit({ url: e.target.value })} placeholder="https://" inputMode="url" /></label>
+          <label className="wide">その他メモ<AutoGrowTextarea value={draft.recruitingInfo} onChange={(e) => update("recruitingInfo", e.target.value)} placeholder="以前の「採用情報」欄の内容もここに残っています" /></label>
+        </div>
+      </div>
+      <div className="editor-section">
+        <h3>選考フロー <span className="count-badge">{flow.length}</span></h3>
+        <p className="company-cards-hint">選考の流れを上から順に並べます。終わったステップは「完了」にして、いまどこにいるか確認できます。</p>
+        {!flow.length && <button type="button" className="secondary-button" onClick={useFlowTemplate}><Sparkles size={14} />標準の流れから作る（ES→Webテスト→面接→内定）</button>}
+        <ol className="flow-list">
+          {flow.map((f, i) => { const current = !f.done && flow.slice(0, i).every((x) => x.done); return (
+            <li key={f.id} className={`flow-step ${f.done ? "done" : ""} ${current ? "current" : ""}`}>
+              <div className="flow-node">
+                <div className="flow-node-head">
+                  <span className="flow-num">{i + 1}</span>
+                  <input className="flow-name" value={f.name} onChange={(e) => patchStep(f.id, { name: e.target.value })} aria-label="ステップ名" />
+                  <button type="button" className={`es-done-chip ${f.done ? "active" : ""}`} aria-pressed={f.done} onClick={() => patchStep(f.id, { done: !f.done })}><CheckCircle2 size={12} />{f.done ? "完了" : current ? "いまここ" : "未"}</button>
+                </div>
+                <input className="flow-date" value={f.date} onChange={(e) => patchStep(f.id, { date: e.target.value })} placeholder="日程（例：12/5 14:00・オンライン）" aria-label="日程" />
+                <AutoGrowTextarea value={f.note} onChange={(e) => patchStep(f.id, { note: e.target.value })} placeholder="メモ（形式・聞かれたこと・対策など）" />
+                <div className="flow-actions">
+                  <button type="button" className="order-step-button" aria-label="上へ" disabled={i === 0} onClick={() => setFlow(moveItem(flow, i, -1))}><ChevronUp size={14} /></button>
+                  <button type="button" className="order-step-button" aria-label="下へ" disabled={i === flow.length - 1} onClick={() => setFlow(moveItem(flow, i, 1))}><ChevronDown size={14} /></button>
+                  <button type="button" className="order-step-button" aria-label="このステップを削除" onClick={() => setFlow(flow.filter((x) => x.id !== f.id))}><Trash2 size={14} /></button>
+                </div>
+              </div>
+              {i < flow.length - 1 && <div className="flow-arrow" aria-hidden><ChevronDown size={18} /></div>}
+            </li>); })}
+        </ol>
+        <form className="field-add-row" onSubmit={(e) => { e.preventDefault(); addStep(newStep); }}>
+          <input value={newStep} onChange={(e) => setNewStep(e.target.value)} placeholder="ステップを追加（例：グループディスカッション）" maxLength={40} />
+          <button type="submit" className="secondary-button" disabled={!newStep.trim()}><Plus size={14} />追加</button>
+        </form>
+        <p className="company-cards-hint">追加・編集したあとは、右上の「保存する」で確定します。</p>
+      </div>
+    </div>}
     {tab === "es" && <div className="es-tab">
       <div className="editor-section flush">
         <h3>ES（エントリーシート） <span className="count-badge">{esEntries.length}</span></h3>
